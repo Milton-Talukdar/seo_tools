@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Drop Diagnostic — SEO Microtool</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --success: #137333;
+            --warning: #b06000;
+            --danger: #c5221f;
+            --bg: #f8f9fa;
+            --card: #ffffff;
+            --text: #202124;
+            --text-secondary: #5f6368;
+            --border: #dadce0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+        header h1 {
+            font-size: 30px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+        header p {
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
+        .card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 28px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 2px rgba(60,64,67,0.1), 0 2px 6px rgba(60,64,67,0.05);
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+        .file-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 700px) {
+            .file-row { grid-template-columns: 1fr; }
+        }
+        .file-box {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .file-box:hover, .file-box.dragover {
+            border-color: var(--primary);
+            background: #f4f8ff;
+        }
+        .file-box input {
+            display: none;
+        }
+        .file-box .icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        .file-box .filename {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            word-break: break-all;
+        }
+        .file-box .filename.loaded {
+            color: var(--success);
+            font-weight: 600;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 28px;
+            border: none;
+            border-radius: 10px;
+            background: var(--primary);
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+            margin-top: 8px;
+        }
+        .btn:hover { background: #1557b0; }
+        .btn:disabled {
+            background: #dadce0;
+            cursor: not-allowed;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        @media (max-width: 700px) {
+            .summary-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        .summary-box {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+        .summary-value {
+            font-size: 26px;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 6px;
+        }
+        .summary-value.up { color: var(--success); }
+        .summary-value.down { color: var(--danger); }
+        .summary-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .diagnosis {
+            padding: 16px 20px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .diagnosis.algo { background: #fef7e0; color: #7a4b00; }
+        .diagnosis.tech { background: #fce8e6; color: #7f2a25; }
+        .diagnosis.brand { background: #e8f0fe; color: #154a93; }
+        .diagnosis.meta { background: #e6f4ea; color: #137333; }
+        .diagnosis.season { background: #f3e8fd; color: #5e1a7a; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+        td {
+            color: var(--text);
+        }
+        .change {
+            font-weight: 700;
+        }
+        .change.up { color: var(--success); }
+        .change.down { color: var(--danger); }
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            margin-top: 8px;
+        }
+        .hidden { display: none; }
+        .tips {
+            margin-top: 20px;
+            padding: 16px 18px;
+            background: #e8f0fe;
+            border-radius: 10px;
+            font-size: 13px;
+        }
+        .tips strong { color: var(--primary); }
+        .tips ul { margin: 8px 0 0 18px; }
+        .tips li { margin-bottom: 4px; color: var(--text-secondary); }
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📉 Traffic Drop Diagnostic</h1>
+            <p>Compare two GSC CSV exports to spot what dropped and why.</p>
+        </header>
+
+        <div class="card">
+            <label>Upload GSC Performance Exports (CSV)</label>
+            <div class="file-row">
+                <div class="file-box" id="dropZone1">
+                    <input type="file" id="file1" accept=".csv">
+                    <div class="icon">📄</div>
+                    <div><strong>Period 1 (Before)</strong></div>
+                    <div class="filename" id="file1Name">Drop CSV here or click to browse</div>
+                </div>
+                <div class="file-box" id="dropZone2">
+                    <input type="file" id="file2" accept=".csv">
+                    <div class="icon">📄</div>
+                    <div><strong>Period 2 (After)</strong></div>
+                    <div class="filename" id="file2Name">Drop CSV here or click to browse</div>
+                </div>
+            </div>
+            <div style="text-align:center;margin-top:20px;">
+                <button class="btn" id="analyzeBtn" disabled>🔍 Analyze Drop</button>
+            </div>
+        </div>
+
+        <div id="results" class="hidden">
+            <div class="summary-grid">
+                <div class="summary-box">
+                    <div class="summary-value" id="totalClicksBefore">0</div>
+                    <div class="summary-label">Clicks Before</div>
+                </div>
+                <div class="summary-box">
+                    <div class="summary-value" id="totalClicksAfter">0</div>
+                    <div class="summary-label">Clicks After</div>
+                </div>
+                <div class="summary-box">
+                    <div class="summary-value down" id="clickChangePct">0%</div>
+                    <div class="summary-label">Change</div>
+                </div>
+                <div class="summary-box">
+                    <div class="summary-value" id="affectedCount">0</div>
+                    <div class="summary-label">Pages/Queries Affected</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="diagnosis" id="diagnosisBox">
+                    Upload data to see diagnosis.
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="section-title">🔥 Top Losers by Clicks</div>
+                <div style="overflow-x:auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Page / Query</th>
+                                <th>Clicks Before</th>
+                                <th>Clicks After</th>
+                                <th>Change</th>
+                                <th>% Change</th>
+                            </tr>
+                        </thead>
+                        <tbody id="losersTable"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="section-title">📈 Biggest Position Drops</div>
+                <div style="overflow-x:auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Page / Query</th>
+                                <th>Pos Before</th>
+                                <th>Pos After</th>
+                                <th>Change</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card tips">
+            <strong>💡 How to use this tool</strong>
+            <ul>
+                <li>Go to Google Search Console → Performance → Export (as CSV).</li>
+                <li>Export <strong>Period 1</strong> (e.g., 4 weeks before the drop).</li>
+                <li>Export <strong>Period 2</strong> (e.g., 4 weeks after the drop).</li>
+                <li>Use the same dimension (Pages or Queries) for both exports.</li>
+                <li>All processing is client-side — your data never leaves your browser.</li>
+            </ul>
+        </div>
+
+        <footer>
+            Built for the SEO community. All processing happens in your browser.
+        </footer>
+    </div>
+
+    <script>
+        const file1Input = document.getElementById('file1');
+        const file2Input = document.getElementById('file2');
+        const file1Name = document.getElementById('file1Name');
+        const file2Name = document.getElementById('file2Name');
+        const dropZone1 = document.getElementById('dropZone1');
+        const dropZone2 = document.getElementById('dropZone2');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const results = document.getElementById('results');
+
+        let csv1 = null, csv2 = null;
+
+        function setupDrop(zone, input, nameEl, num) {
+            zone.addEventListener('click', () => input.click());
+            zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+            zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length) {
+                    input.files = files;
+                    handleFile(files[0], nameEl, num);
+                }
+            });
+            input.addEventListener('change', () => {
+                if (input.files.length) handleFile(input.files[0], nameEl, num);
+            });
+        }
+
+        function handleFile(file, nameEl, num) {
+            nameEl.textContent = file.name;
+            nameEl.classList.add('loaded');
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                if (num === 1) csv1 = e.target.result;
+                else csv2 = e.target.result;
+                analyzeBtn.disabled = !(csv1 && csv2);
+            };
+            reader.readAsText(file);
+        }
+
+        setupDrop(dropZone1, file1Input, file1Name, 1);
+        setupDrop(dropZone2, file2Input, file2Name, 2);
+
+        function parseCSV(text) {
+            const lines = text.trim().split(/\r?\n/);
+            if (lines.length < 2) return [];
+            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+            const out = [];
+            for (let i = 1; i < lines.length; i++) {
+                const row = {};
+                // Simple CSV parse (doesn't handle commas inside quotes perfectly, but works for standard GSC exports)
+                const vals = lines[i].split(',');
+                headers.forEach((h, idx) => {
+                    let v = vals[idx] ? vals[idx].trim().replace(/^"|"$/g, '') : '';
+                    if (['clicks', 'impressions', 'ctr', 'position'].includes(h)) {
+                        v = parseFloat(v) || 0;
+                    }
+                    row[h] = v;
+                });
+                // Determine key: page/url or query
+                row._key = row['page'] || row['url'] || row['query'] || row['top queries'] || 'Unknown';
+                out.push(row);
+            }
+            return out;
+        }
+
+        function formatNum(n) {
+            return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+        }
+
+        analyzeBtn.addEventListener('click', () => {
+            if (!csv1 || !csv2) return;
+
+            const data1 = parseCSV(csv1);
+            const data2 = parseCSV(csv2);
+
+            const map1 = new Map(data1.map(r => [r._key, r]));
+            const map2 = new Map(data2.map(r => [r._key, r]));
+
+            const allKeys = new Set([...map1.keys(), ...map2.keys()]);
+            const comparisons = [];
+
+            let clicksBefore = 0, clicksAfter = 0;
+
+            allKeys.forEach(key => {
+                const r1 = map1.get(key) || { clicks: 0, impressions: 0, position: 0 };
+                const r2 = map2.get(key) || { clicks: 0, impressions: 0, position: 0 };
+                clicksBefore += r1.clicks;
+                clicksAfter += r2.clicks;
+
+                comparisons.push({
+                    key,
+                    clicksBefore: r1.clicks,
+                    clicksAfter: r2.clicks,
+                    clickDiff: r2.clicks - r1.clicks,
+                    clickPct: r1.clicks > 0 ? ((r2.clicks - r1.clicks) / r1.clicks) * 100 : (r2.clicks > 0 ? 100 : 0),
+                    posBefore: r1.position || 0,
+                    posAfter: r2.position || 0,
+                    posDiff: (r2.position || 0) - (r1.position || 0)
+                });
+            });
+
+            const clickChange = clicksBefore > 0 ? ((clicksAfter - clicksBefore) / clicksBefore) * 100 : 0;
+            const affected = comparisons.filter(c => c.clickDiff < 0).length;
+
+            // Update summary
+            document.getElementById('totalClicksBefore').textContent = formatNum(clicksBefore);
+            document.getElementById('totalClicksAfter').textContent = formatNum(clicksAfter);
+            const changeEl = document.getElementById('clickChangePct');
+            changeEl.textContent = (clickChange > 0 ? '+' : '') + formatNum(clickChange) + '%';
+            changeEl.className = 'summary-value ' + (clickChange >= 0 ? 'up' : 'down');
+            document.getElementById('affectedCount').textContent = affected;
+
+            // Diagnosis
+            const diag = document.getElementById('diagnosisBox');
+            const broadDrop = affected / Math.max(comparisons.length, 1) > 0.5;
+            const avgPosChange = comparisons.reduce((s, c) => s + c.posDiff, 0) / Math.max(comparisons.length, 1);
+            const topLosers = comparisons.filter(c => c.clickDiff < 0).sort((a, b) => a.clickDiff - b.clickDiff).slice(0, 10);
+            const brandedDropped = topLosers.some(c => c.key.toLowerCase().includes('brand') || c.key.split(' ').length < 3);
+
+            if (broadDrop && avgPosChange > 2) {
+                diag.className = 'diagnosis algo';
+                diag.textContent = '🔍 Diagnosis: Broad algorithm update or SERP feature change suspected. Many pages/queries dropped in position simultaneously.';
+            } else if (broadDrop && avgPosChange <= 2) {
+                diag.className = 'diagnosis season';
+                diag.textContent = '📅 Diagnosis: Seasonality or demand shift. Traffic dropped broadly but positions remained stable.';
+            } else if (!broadDrop && topLosers.length > 0) {
+                diag.className = 'diagnosis tech';
+                diag.textContent = '🔧 Diagnosis: Page-specific issue. A few pages/queries lost traffic — check for technical problems, content changes, or manual actions on those URLs.';
+            } else if (brandedDropped) {
+                diag.className = 'diagnosis brand';
+                diag.textContent = '🏷️ Diagnosis: Brand traffic dropped. Check brand campaigns, PR issues, or direct traffic trends.';
+            } else if (clickChange > -10) {
+                diag.className = 'diagnosis meta';
+                diag.textContent = '✅ Diagnosis: Minor fluctuation. The drop is within normal variance or CTR shifted due to SERP feature changes.';
+            } else {
+                diag.className = 'diagnosis tech';
+                diag.textContent = '⚠️ Diagnosis: Significant drop. Review recent site changes, technical issues, and backlink losses.';
+            }
+
+            // Top losers table
+            const losersBody = document.getElementById('losersTable');
+            losersBody.innerHTML = topLosers.map(c => {
+                const pct = c.clickPct === Infinity ? 'New' : (c.clickPct > 0 ? '+' : '') + formatNum(c.clickPct) + '%';
+                return `<tr>
+                    <td>${c.key}</td>
+                    <td>${formatNum(c.clicksBefore)}</td>
+                    <td>${formatNum(c.clicksAfter)}</td>
+                    <td class="change ${c.clickDiff >= 0 ? 'up' : 'down'}">${c.clickDiff >= 0 ? '+' : ''}${formatNum(c.clickDiff)}</td>
+                    <td class="change ${c.clickPct >= 0 ? 'up' : 'down'}">${pct}</td>
+                </tr>`;
+            }).join('');
+
+            // Position drops table
+            const posDrops = comparisons.filter(c => c.posDiff > 0).sort((a, b) => b.posDiff - a.posDiff).slice(0, 10);
+            const posBody = document.getElementById('positionTable');
+            posBody.innerHTML = posDrops.map(c => `<tr>
+                <td>${c.key}</td>
+                <td>${c.posBefore > 0 ? formatNum(c.posBefore) : '—'}</td>
+                <td>${c.posAfter > 0 ? formatNum(c.posAfter) : '—'}</td>
+                <td class="change down">+${formatNum(c.posDiff)}</td>
+            </tr>`).join('');
+
+            if (posDrops.length === 0) {
+                posBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#666;">No significant position drops detected.</td></tr>';
+            }
+
+            results.classList.remove('hidden');
+            results.scrollIntoView({ behavior: 'smooth' });
+        });
+    </script>
+</body>
+</html>

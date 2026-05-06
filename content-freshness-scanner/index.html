@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Freshness Scanner — SEO Microtool</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --success: #137333;
+            --warning: #b06000;
+            --danger: #c5221f;
+            --bg: #f8f9fa;
+            --card: #ffffff;
+            --text: #202124;
+            --text-secondary: #5f6368;
+            --border: #dadce0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+        header h1 {
+            font-size: 30px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+        header p {
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
+        .score-card {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 28px;
+            flex-wrap: wrap;
+        }
+        .score-box {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 24px 36px;
+            box-shadow: 0 1px 2px rgba(60,64,67,0.1);
+            text-align: center;
+            min-width: 160px;
+        }
+        .score-value {
+            font-size: 42px;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 6px;
+        }
+        .score-value.good { color: var(--success); }
+        .score-value.warn { color: var(--warning); }
+        .score-value.bad { color: var(--danger); }
+        .score-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        @media (max-width: 900px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+        .card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 1px 2px rgba(60,64,67,0.1), 0 2px 6px rgba(60,64,67,0.05);
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 400px;
+            padding: 16px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 15px;
+            line-height: 1.7;
+            resize: vertical;
+            font-family: inherit;
+            color: var(--text);
+        }
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(26,115,232,0.1);
+        }
+        .output-box {
+            width: 100%;
+            min-height: 400px;
+            max-height: 600px;
+            overflow-y: auto;
+            padding: 20px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 15px;
+            line-height: 1.7;
+            background: #fafafa;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .highlight-year {
+            background: #fce8e6;
+            color: #c5221f;
+            padding: 1px 3px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .highlight-relative {
+            background: #fef7e0;
+            color: #b06000;
+            padding: 1px 3px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .highlight-outdated {
+            background: #f3e8fd;
+            color: #7b1fa2;
+            padding: 1px 3px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .highlight-stat {
+            background: #e8f0fe;
+            color: #1a73e8;
+            padding: 1px 3px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .findings {
+            margin-top: 20px;
+        }
+        .finding-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .finding-item.year { background: #fce8e6; color: #7f2a25; }
+        .finding-item.relative { background: #fef7e0; color: #7a4b00; }
+        .finding-item.outdated { background: #f3e8fd; color: #5e1a7a; }
+        .finding-item.stat { background: #e8f0fe; color: #154a93; }
+        .finding-count {
+            font-weight: 700;
+            min-width: 24px;
+            text-align: center;
+        }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+        .empty-state {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 60px 20px;
+            font-size: 15px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🍃 Content Freshness Scanner</h1>
+            <p>Paste your article to find outdated years, stale references, and decay signals.</p>
+        </header>
+
+        <div class="score-card" id="scoreCard" style="display:none;">
+            <div class="score-box">
+                <div class="score-value good" id="freshnessScore">—</div>
+                <div class="score-label">Freshness Score</div>
+            </div>
+            <div class="score-box">
+                <div class="score-value" id="issuesFound">0</div>
+                <div class="score-label">Issues Found</div>
+            </div>
+            <div class="score-box">
+                <div class="score-value" id="yearsFound">0</div>
+                <div class="score-label">Old References</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <label for="inputText">Your Content</label>
+                <textarea id="inputText" placeholder="Paste article text here...
+
+Example:
+In 2022, Google announced that page experience signals would be rolled out gradually. Last year, we saw major shifts in how rankings worked. As of 2021, keyword stuffing was still a common tactic. Many experts recommended using Google+ for SEO."></textarea>
+            </div>
+            <div class="card">
+                <label>Scan Results</label>
+                <div class="legend">
+                    <div class="legend-item"><div class="legend-dot" style="background:#fce8e6"></div> Outdated Year</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#fef7e0"></div> Relative Date</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#f3e8fd"></div> Outdated Term</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#e8f0fe"></div> Dated Stat</div>
+                </div>
+                <div class="output-box" id="outputBox">
+                    <div class="empty-state">Start typing or paste content to see the scan results.</div>
+                </div>
+                <div class="findings" id="findings"></div>
+            </div>
+        </div>
+
+        <footer>
+            Built for the SEO community. All processing happens in your browser.
+        </footer>
+    </div>
+
+    <script>
+        const input = document.getElementById('inputText');
+        const outputBox = document.getElementById('outputBox');
+        const findingsEl = document.getElementById('findings');
+        const scoreCard = document.getElementById('scoreCard');
+        const freshnessScoreEl = document.getElementById('freshnessScore');
+        const issuesFoundEl = document.getElementById('issuesFound');
+        const yearsFoundEl = document.getElementById('yearsFound');
+
+        const CURRENT_YEAR = new Date().getFullYear();
+
+        const OUTDATED_TERMS = [
+            { term: /\bGoogle\+\b/gi, label: 'Google+ (shut down 2019)' },
+            { term: /\bGoogle Plus\b/gi, label: 'Google Plus (shut down 2019)' },
+            { term: /\bAdobe Flash\b/gi, label: 'Adobe Flash (EOL 2020)' },
+            { term: /\bFlash Player\b/gi, label: 'Flash Player (EOL 2020)' },
+            { term: /\bInternet Explorer\b/gi, label: 'Internet Explorer (retired 2022)' },
+            { term: /\bIE 11\b/gi, label: 'IE 11 (retired 2022)' },
+            { term: /\bWindows Phone\b/gi, label: 'Windows Phone (discontinued)' },
+            { term: /\bBlackberry\b/gi, label: 'Blackberry (largely obsolete)' },
+            { term: /\bStumbleUpon\b/gi, label: 'StumbleUpon (shut down 2018)' },
+            { term: /\bVine\b/gi, label: 'Vine (shut down 2017)' },
+            { term: /\bGoogle Wave\b/gi, label: 'Google Wave (shut down 2012)' },
+            { term: /\bGoogle Buzz\b/gi, label: 'Google Buzz (shut down 2011)' },
+            { term: /\bmeta keywords\b/gi, label: 'Meta keywords (not used by Google)' },
+            { term: /\bkeyword stuffing\b/gi, label: 'Keyword stuffing (penalized tactic)' },
+            { term: /\barticle spinning\b/gi, label: 'Article spinning (penalized tactic)' },
+            { term: /\bprivate blog network\b/gi, label: 'PBNs (high-risk tactic)' },
+            { term: /\bexact match anchor\b/gi, label: 'Exact match anchors (over-optimization risk)' },
+            { term: /\bAMP is mandatory\b/gi, label: 'AMP is no longer required for Top Stories' },
+            { term: /\bAMP required\b/gi, label: 'AMP is no longer required for Top Stories' },
+        ];
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function analyze(text) {
+            if (!text.trim()) return null;
+
+            let html = escapeHtml(text);
+            const findings = [];
+            let yearCount = 0;
+            let issueCount = 0;
+
+            // 1. Years: 19xx or 20xx that are not current or current-1
+            html = html.replace(/\b(19\d{2}|20\d{2})\b/g, (match) => {
+                const yr = parseInt(match);
+                if (yr < CURRENT_YEAR - 1) {
+                    yearCount++;
+                    issueCount++;
+                    findings.push({ type: 'year', text: `Year ${yr} is outdated` });
+                    return `<span class="highlight-year" title="Outdated year">${match}</span>`;
+                }
+                return match;
+            });
+
+            // 2. Relative dates that go stale
+            const relativePatterns = [
+                /\b(last year|earlier this year|a few months ago|last month|recently|just recently|in recent months)\b/gi
+            ];
+            relativePatterns.forEach(pattern => {
+                html = html.replace(pattern, (match) => {
+                    issueCount++;
+                    findings.push({ type: 'relative', text: `Relative date: "${match}"` });
+                    return `<span class="highlight-relative" title="Relative date - goes stale quickly">${match}</span>`;
+                });
+            });
+
+            // 3. Outdated terms
+            OUTDATED_TERMS.forEach(({ term, label }) => {
+                html = html.replace(term, (match) => {
+                    issueCount++;
+                    findings.push({ type: 'outdated', text: `"${match}" — ${label}` });
+                    return `<span class="highlight-outdated" title="${label}">${match}</span>`;
+                });
+            });
+
+            // 4. Dated stat phrases
+            const statPatterns = [
+                /\b(as of \d{4}|in \d{4},? according to|reported in \d{4}|a \d{4} study|from \d{4})\b/gi
+            ];
+            statPatterns.forEach(pattern => {
+                html = html.replace(pattern, (match) => {
+                    issueCount++;
+                    findings.push({ type: 'stat', text: `Dated reference: "${match}"` });
+                    return `<span class="highlight-stat" title="Dated statistic or study">${match}</span>`;
+                });
+            });
+
+            // Calculate freshness score (0-100)
+            const wordCount = text.trim().split(/\s+/).length;
+            const density = issueCount / Math.max(wordCount, 1);
+            let score = Math.max(0, Math.round(100 - (density * 500) - (yearCount * 3)));
+            if (issueCount === 0) score = 100;
+
+            return { html, findings, score, issueCount, yearCount };
+        }
+
+        function update() {
+            const text = input.value;
+            const result = analyze(text);
+
+            if (!result) {
+                scoreCard.style.display = 'none';
+                outputBox.innerHTML = '<div class="empty-state">Start typing or paste content to see the scan results.</div>';
+                findingsEl.innerHTML = '';
+                return;
+            }
+
+            scoreCard.style.display = 'flex';
+            outputBox.innerHTML = result.html;
+            freshnessScoreEl.textContent = result.score;
+            freshnessScoreEl.className = 'score-value ' + (result.score >= 80 ? 'good' : result.score >= 50 ? 'warn' : 'bad');
+            issuesFoundEl.textContent = result.issueCount;
+            yearsFoundEl.textContent = result.yearCount;
+
+            if (result.findings.length === 0) {
+                findingsEl.innerHTML = '<div class="finding-item" style="background:#e6f4ea;color:#137333"><span>✅</span> No freshness issues detected. Content looks current!</div>';
+            } else {
+                findingsEl.innerHTML = result.findings.slice(0, 20).map(f => {
+                    const icon = f.type === 'year' ? '📅' : f.type === 'relative' ? '⏰' : f.type === 'outdated' ? '💀' : '📊';
+                    return `<div class="finding-item ${f.type}"><span class="finding-count">${icon}</span><span>${escapeHtml(f.text)}</span></div>`;
+                }).join('');
+                if (result.findings.length > 20) {
+                    findingsEl.innerHTML += `<div style="text-align:center;color:#666;font-size:13px;margin-top:8px;">+ ${result.findings.length - 20} more issues</div>`;
+                }
+            }
+        }
+
+        input.addEventListener('input', update);
+        update();
+    </script>
+</body>
+</html>
