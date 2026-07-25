@@ -1,3 +1,4 @@
 .env
 __pycache__/
 tracker.log
+.DS_Store

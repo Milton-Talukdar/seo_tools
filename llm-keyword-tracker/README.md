@@ -7,7 +7,9 @@ Snapshots are stored in SQLite so you can watch share of voice trend week over w
 ## Files
 
 - `llm_track.py` — the tracker (all config constants are at the top of this file)
+- `discover.py` — monthly job: AI search volumes + mines real user questions (self-throttled to once per 25 days, `--force` to override)
 - `prompts.csv` — one prompt per line; `#` lines are comments
+- `seeds.csv` — short keyword phrases for discover.py
 - `.env` — DataForSEO credentials (never commit; already git-ignored)
 - `llm_visibility.db` — SQLite results, created on first run
 
@@ -18,7 +20,8 @@ python3 llm_track.py --dry-run    # preview calls, zero cost
 python3 llm_track.py --limit 2    # cheap smoke test (first 2 prompts only)
 python3 llm_track.py              # full run: all prompts x 4 platforms
 python3 llm_track.py --report     # share-of-voice trend, no API calls
-python3 dashboard.py --open       # build dashboard.html and open it in your browser
+python3 discover.py --force       # volumes + real-prompt mining (~$1.25)
+python3 dashboard.py --open       # build index.html and open it in your browser
 ```
 
 ## Weekly schedule (cron)
@@ -32,6 +35,7 @@ Mondays 06:17. Weekly is enough — LLM answers drift slowly.
 ## Cost
 
 ~$0.01 per prompt per platform. The seeded 6 prompts x 4 platforms x weekly ≈ $1/month.
+discover.py adds ~$1.25/month (volumes + LLM Mentions mining), running monthly.
 
 ## Customizing
 

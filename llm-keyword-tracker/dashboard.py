@@ -3,7 +3,7 @@
 dashboard.py — generate a self-contained HTML dashboard from llm_visibility.db.
 
 Usage:
-    python3 dashboard.py           # writes dashboard.html and prints its path
+    python3 dashboard.py           # writes index.html and prints its path
     python3 dashboard.py --open    # also opens it in your browser
 """
 import argparse
@@ -14,7 +14,7 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-from llm_track import BRANDS, MY_DOMAIN, PLATFORMS, DB_PATH
+from llm_track import BRANDS, MY_DOMAIN, PLATFORMS, DB_PATH, PROMPTS_CSV
 
 OUT = Path(__file__).parent / "index.html"  # index.html = clean GitHub Pages URL
 YOU = BRANDS[0]  # first brand in the list = your brand
@@ -45,6 +45,10 @@ summary:hover { background: #f0f2f5; border-radius: 6px; }
           border: 1px solid #e4e6eb; border-radius: 8px; padding: 10px; margin: 6px 0 14px;
           max-height: 300px; overflow-y: auto; }
 .plat { font-weight: 600; display: inline-block; min-width: 90px; }
+.spark { display: inline-flex; align-items: flex-end; gap: 1px; height: 18px; }
+.spark i { display: block; width: 6px; background: #7aa7d9; border-radius: 1px; }
+.chip.tracked { background: #d3f0dc; color: #1a7f37; font-weight: 600; }
+.vol { font-weight: 600; }
 """
 
 def esc(s):
@@ -84,6 +88,59 @@ def trend_section(con):
     return (f"<h2>Share of voice trend</h2><div class='card'><table>"
             f"<tr><th>run date</th>{head}</tr>{body}</table>"
             f"<p class='sub'>% of prompt × platform answers mentioning each brand.</p></div>")
+
+
+def volume_section(con):
+    try:
+        rows = con.execute(
+            "SELECT v.keyword, v.ai_search_volume, v.trend_json FROM volumes v "
+            "JOIN (SELECT keyword, MAX(day) d FROM volumes GROUP BY keyword) m "
+            "ON v.keyword = m.keyword AND v.day = m.d "
+            "ORDER BY v.ai_search_volume DESC").fetchall()
+    except sqlite3.OperationalError:
+        return ""  # discover.py has not run yet
+    if not rows:
+        return ""
+    out = ["<h2>AI search volume — your seed keywords</h2><div class='card'><table>"
+           "<tr><th>keyword</th><th>AI searches/mo</th><th>12-month trend</th></tr>"]
+    for kw, vol, tj in rows:
+        months = json.loads(tj or "[]")
+        vals = [m.get("ai_search_volume") or 0 for m in reversed(months)]  # oldest → newest
+        mx = max(vals) or 1
+        spark = "".join(f"<i style='height:{max(1, round(v / mx * 18))}px'></i>"
+                        for v in vals)
+        out.append(f"<tr><td>{esc(kw)}</td><td class='vol'>{vol}</td>"
+                   f"<td><span class='spark'>{spark}</span></td></tr>")
+    out.append("</table><p class='sub'>How often each phrase is typed into AI tools per "
+               "month (US). Updated monthly by discover.py.</p></div>")
+    return "".join(out)
+
+
+def discovered_section(con):
+    try:
+        rows = con.execute(
+            "SELECT query, platform, ai_search_volume, seed FROM discovered "
+            "ORDER BY ai_search_volume DESC LIMIT 40").fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    if not rows:
+        return ""
+    tracked = {l.strip().lower() for l in open(PROMPTS_CSV, encoding="utf-8")
+               if l.strip() and not l.startswith("#")}
+    out = ["<h2>Discovered prompts — what people really ask AI</h2>"
+           "<div class='card'><table>"
+           "<tr><th>question</th><th>platform</th><th>AI searches/mo</th>"
+           "<th>tracked?</th></tr>"]
+    for q, platform, vol, seed in rows:
+        mark = ("<span class='chip tracked'>in tracker</span>" if q.lower() in tracked
+                else "<span class='chip'>—</span>")
+        out.append(f"<tr><td>{esc(q)}</td>"
+                   f"<td><span class='chip'>{esc(platform)}</span></td>"
+                   f"<td class='vol'>{vol}</td><td>{mark}</td></tr>")
+    out.append("</table><p class='sub'>Real user questions from the LLM Mentions "
+               "database matched to your seeds. Add high-volume ones to prompts.csv "
+               "to track them weekly.</p></div>")
+    return "".join(out)
 
 
 def latest_section(con):
@@ -126,7 +183,8 @@ def main():
             f"<div class='sub'>brand: {esc(YOU)} · domain: {esc(MY_DOMAIN)} · "
             f"platforms: {esc(', '.join(PLATFORMS))} · "
             f"generated {datetime.now():%Y-%m-%d %H:%M}</div>"
-            f"{trend_section(con)}{latest_section(con)}"
+            f"{trend_section(con)}{volume_section(con)}"
+            f"{discovered_section(con)}{latest_section(con)}"
             f"</div></body></html>")
     OUT.write_text(page, encoding="utf-8")
     print(f"Dashboard written to: {OUT}")
