@@ -49,6 +49,24 @@ summary:hover { background: #f0f2f5; border-radius: 6px; }
 .spark i { display: block; width: 6px; background: #7aa7d9; border-radius: 1px; }
 .chip.tracked { background: #d3f0dc; color: #1a7f37; font-weight: 600; }
 .vol { font-weight: 600; }
+.kpis { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.kpi { flex: 1; min-width: 150px; background: #fff; border: 1px solid #e4e6eb;
+       border-radius: 10px; padding: 14px 16px; }
+.kpi .num { font-size: 26px; font-weight: 700; }
+.kpi .label { color: #65676b; font-size: 12px; margin-top: 2px; }
+.delta { font-size: 12px; font-weight: 600; }
+.delta.up { color: #1a7f37; }
+.delta.down { color: #9b1c1c; }
+.lead-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 13px; }
+.lead-row .name { min-width: 140px; }
+.lead-row .bar { flex: 1; }
+.insights { margin: 8px 0 0; padding-left: 20px; }
+.insights li { margin: 6px 0; font-size: 14px; }
+@media print {
+  body { background: #fff; }
+  details, .no-print { display: none; }
+  .card, .kpi { break-inside: avoid; }
+}
 """
 
 def esc(s):
@@ -59,6 +77,104 @@ def brand_chip(brand, cited=False):
     cls = "chip you" if brand == YOU else "chip"
     label = esc(brand)
     return f'<span class="{cls}">{label}</span>'
+
+
+def exec_summary(con):
+    days = [r[0] for r in con.execute(
+        "SELECT DISTINCT day FROM snapshots ORDER BY day DESC LIMIT 2")]
+    if not days:
+        return ""
+
+    def sov(day):
+        rows = con.execute(
+            "SELECT mentions, cited_mine FROM snapshots WHERE day=?", (day,)).fetchall()
+        n = len(rows) or 1
+        per = {b: sum(json.loads(m)[b] for m, _ in rows) / n * 100 for b in BRANDS}
+        return per, sum(c for _, c in rows), len(rows)
+
+    latest, cited, total = sov(days[0])
+    your = latest[YOU]
+    ranking = sorted(latest.items(), key=lambda kv: -kv[1])
+    rank = [b for b, _ in ranking].index(YOU) + 1
+    leader, leader_v = ranking[0]
+
+    if len(days) > 1:
+        prev, _, _ = sov(days[1])
+        d = your - prev[YOU]
+        cls, arrow = ("up", "+") if d >= 0 else ("down", "-")
+        delta_html = (f"<span class='delta {cls}'>{arrow}{abs(d):.0f} pts "
+                      f"vs {esc(days[1])}</span>")
+    else:
+        delta_html = "<span class='sub'>first run — trend starts next week</span>"
+
+    # prompt- and platform-level analysis of the latest run
+    rows = con.execute("SELECT prompt, platform, mentions FROM snapshots WHERE day=?",
+                       (days[0],)).fetchall()
+    by_prompt, plat_you = {}, {}
+    for prompt, platform, mj in rows:
+        m = json.loads(mj)
+        by_prompt.setdefault(prompt, []).append(m)
+        plat_you.setdefault(platform, []).append(m[YOU])
+    appear = sum(1 for ms in by_prompt.values() if any(m[YOU] for m in ms))
+    opps = [(p, {b for m in ms for b in BRANDS if b != YOU and m[b]})
+            for p, ms in by_prompt.items()
+            if not any(m[YOU] for m in ms)]
+    opps = [(p, cs) for p, cs in opps if len(cs) >= 2]
+    present = [p for p in PLATFORMS if any(plat_you.get(p, []))]
+    absent = [p for p in PLATFORMS if p not in present]
+
+    # leaderboard
+    board = "".join(
+        f"<div class='lead-row'><span class='name'>{'&#9658; ' if b == YOU else ''}"
+        f"{esc(b)}{' (you)' if b == YOU else ''}</span>"
+        f"<div class='bar{' you' if b == YOU else ''}'>"
+        f"<div style='width:{v:.0f}%'></div></div><b>{v:.0f}%</b></div>"
+        for b, v in ranking)
+
+    # insights
+    insights = [
+        f"Your AI share of voice is <b>{your:.0f}%</b> — rank <b>#{rank} of "
+        f"{len(BRANDS)}</b> tracked brands. Current leader: <b>{esc(leader)}</b> "
+        f"({leader_v:.0f}%).",
+        f"You appear in answers for <b>{appear} of {len(by_prompt)}</b> tracked "
+        f"prompts; present on <b>{esc(', '.join(present) or 'no platform')}</b>"
+        + (f", absent on <b>{esc(', '.join(absent))}</b>." if absent else "."),
+        f"Your site was cited as a source in <b>{cited} of {total}</b> AI answers "
+        f"this run.",
+    ]
+    if opps:
+        ex = esc(opps[0][0][:70])
+        insights.append(
+            f"<b>{len(opps)} prompts</b> show multiple competitors but not you — "
+            f"top opportunity: \u201c{ex}\u201d.")
+    try:
+        row = con.execute(
+            "SELECT COUNT(*) FROM discovered WHERE ai_search_volume > 100").fetchone()
+        if row and row[0]:
+            insights.append(
+                f"<b>{row[0]} high-volume real user questions</b> found in AI search "
+                f"(see Discovered prompts) — candidates to add to the tracker.")
+    except sqlite3.OperationalError:
+        pass
+
+    kpis = (
+        f"<div class='kpis'>"
+        f"<div class='kpi'><div class='num'>{your:.0f}%</div>"
+        f"<div class='label'>AI share of voice<br>{delta_html}</div></div>"
+        f"<div class='kpi'><div class='num'>#{rank}<span class='sub'> / "
+        f"{len(BRANDS)}</span></div><div class='label'>competitive rank in AI answers</div></div>"
+        f"<div class='kpi'><div class='num'>{appear}/{len(by_prompt)}</div>"
+        f"<div class='label'>prompts where AI mentions you</div></div>"
+        f"<div class='kpi'><div class='num'>{cited}/{total}</div>"
+        f"<div class='label'>AI answers citing your site</div></div>"
+        f"</div>")
+    bullets = "".join(f"<li>{i}</li>" for i in insights)
+    return (f"<h2>Executive summary — {esc(days[0])}</h2>{kpis}"
+            f"<div class='card'><b>Competitive leaderboard"
+            f" (% of AI answers mentioning each brand)</b>{board}"
+            f"<ul class='insights'>{bullets}</ul></div>"
+            f"<p class='sub no-print'>Presenting? Use your browser's Print "
+            f"(Ctrl/Cmd+P) &rarr; Save as PDF — print view hides the raw answers.</p>")
 
 
 def trend_section(con):
@@ -183,7 +299,7 @@ def main():
             f"<div class='sub'>brand: {esc(YOU)} · domain: {esc(MY_DOMAIN)} · "
             f"platforms: {esc(', '.join(PLATFORMS))} · "
             f"generated {datetime.now():%Y-%m-%d %H:%M}</div>"
-            f"{trend_section(con)}{volume_section(con)}"
+            f"{exec_summary(con)}{trend_section(con)}{volume_section(con)}"
             f"{discovered_section(con)}{latest_section(con)}"
             f"</div></body></html>")
     OUT.write_text(page, encoding="utf-8")
