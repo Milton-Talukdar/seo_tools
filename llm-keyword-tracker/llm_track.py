@@ -30,7 +30,7 @@ ENV_PATH = HERE / ".env"
 
 # ---- edit these ------------------------------------------------------------
 BRANDS = ["vantage circle", "bonusly", "kudos", "achievers", "awardco",
-          "nectar", "motivosity"]
+          "nectar", "motivosity", "o.c. tanner", "workhuman"]
 MY_DOMAIN = "vantagecircle.com"      # used to detect citations of your site
 PLATFORMS = ["chat_gpt", "claude", "gemini", "perplexity"]
 MODELS = {"chat_gpt": "gpt-5.5",     # pinned for comparable runs over time
@@ -116,8 +116,10 @@ def ask_llm(platform, prompt):
 
 
 def detect_mentions(answer):
-    low = answer.lower()
-    return {b: bool(re.search(r"(?<![a-z])" + re.escape(b) + r"(?![a-z])", low))
+    # strip dots so "O.C. Tanner", "OC Tanner" etc. all match one brand entry
+    low = answer.lower().replace(".", "")
+    return {b: bool(re.search(r"(?<![a-z])" + re.escape(b.lower().replace(".", ""))
+                              + r"(?![a-z])", low))
             for b in BRANDS}
 
 
@@ -145,7 +147,7 @@ def report(con):
             if not rows:
                 continue
             n = len(rows)
-            sov = {b: sum(json.loads(m)[b] for m, _ in rows) / n * 100 for b in BRANDS}
+            sov = {b: sum(json.loads(m).get(b, False) for m, _ in rows) / n * 100 for b in BRANDS}
             cited = sum(c for _, c in rows) / n * 100
             top = "  ".join(f"{b}: {v:.0f}%" for b, v in sov.items() if v > 0) or "—"
             print(f"  {platform:11s} {top}   | your site cited: {cited:.0f}%")

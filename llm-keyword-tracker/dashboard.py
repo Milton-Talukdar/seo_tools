@@ -89,7 +89,7 @@ def exec_summary(con):
         rows = con.execute(
             "SELECT mentions, cited_mine FROM snapshots WHERE day=?", (day,)).fetchall()
         n = len(rows) or 1
-        per = {b: sum(json.loads(m)[b] for m, _ in rows) / n * 100 for b in BRANDS}
+        per = {b: sum(json.loads(m).get(b, False) for m, _ in rows) / n * 100 for b in BRANDS}
         return per, sum(c for _, c in rows), len(rows)
 
     latest, cited, total = sov(days[0])
@@ -114,11 +114,11 @@ def exec_summary(con):
     for prompt, platform, mj in rows:
         m = json.loads(mj)
         by_prompt.setdefault(prompt, []).append(m)
-        plat_you.setdefault(platform, []).append(m[YOU])
-    appear = sum(1 for ms in by_prompt.values() if any(m[YOU] for m in ms))
-    opps = [(p, {b for m in ms for b in BRANDS if b != YOU and m[b]})
+        plat_you.setdefault(platform, []).append(m.get(YOU, False))
+    appear = sum(1 for ms in by_prompt.values() if any(m.get(YOU, False) for m in ms))
+    opps = [(p, {b for m in ms for b in BRANDS if b != YOU and m.get(b, False)})
             for p, ms in by_prompt.items()
-            if not any(m[YOU] for m in ms)]
+            if not any(m.get(YOU, False) for m in ms)]
     opps = [(p, cs) for p, cs in opps if len(cs) >= 2]
     present = [p for p in PLATFORMS if any(plat_you.get(p, []))]
     absent = [p for p in PLATFORMS if p not in present]
