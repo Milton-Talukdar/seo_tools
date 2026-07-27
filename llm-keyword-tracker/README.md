@@ -35,7 +35,7 @@ Mondays 06:17. Weekly is enough — LLM answers drift slowly.
 ## Cost
 
 ~$0.01 per prompt per platform. The seeded 6 prompts x 4 platforms x weekly ≈ $1/month.
-discover.py adds ~$1.25/month (volumes + LLM Mentions mining), running monthly.
+discover.py adds ~$1.45/month (volumes + LLM Mentions mining + silent-citation check), running monthly.
 
 ## Customizing
 

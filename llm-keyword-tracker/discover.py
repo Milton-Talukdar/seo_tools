@@ -22,7 +22,7 @@ import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
 
-from llm_track import DB_PATH, dfs_post, load_env
+from llm_track import BRANDS, DB_PATH, MY_DOMAIN, dfs_post, load_env
 
 HERE = Path(__file__).parent
 SEEDS_CSV = HERE / "seeds.csv"
@@ -40,6 +40,33 @@ def init_tables(con):
     con.execute("""CREATE TABLE IF NOT EXISTS discovered(
         query TEXT PRIMARY KEY, platform TEXT, ai_search_volume INTEGER,
         seed TEXT, first_seen TEXT, last_seen TEXT)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS silent(
+        day TEXT, query TEXT, platform TEXT, ai_search_volume INTEGER,
+        PRIMARY KEY(day, query, platform))""")
+
+
+def check_silent_citations(con, today):
+    """Answers that source your domain but never name your brand (~$0.20)."""
+    result = dfs_post("/llm_mentions/search_mentions/live", [{
+        "language_name": "English", "location_code": 2840,
+        "target": [{"domain": MY_DOMAIN}],
+        "limit": 100}])
+    items = (result[0].get("items") if result else []) or []
+    kept = 0
+    brand = BRANDS[0]                          # "vantage circle"
+    bare = MY_DOMAIN.split(".")[0]             # "vantagecircle"
+    for it in items:
+        srcs = json.dumps(it.get("sources") or []).lower()
+        text = ((it.get("question") or "") + " " + (it.get("answer") or ""))
+        text = text.lower().replace(".", "")
+        named = brand in text or bare in text
+        if MY_DOMAIN in srcs and not named:
+            con.execute("INSERT OR REPLACE INTO silent VALUES (?,?,?,?)",
+                        (today, (it.get("question") or "").strip(),
+                         it.get("platform") or "?",
+                         it.get("ai_search_volume") or 0))
+            kept += 1
+    return kept
 
 
 def due(con):
@@ -99,11 +126,13 @@ def mine_questions(con, seeds, today):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--only", choices=["volumes", "mentions", "silent"],
+                    help="run a single job (ignores the throttle)")
     args = ap.parse_args()
 
     con = sqlite3.connect(DB_PATH)
     init_tables(con)
-    if not args.force and not due(con):
+    if not args.only and not args.force and not due(con):
         print(f"Discovery ran within the last {THROTTLE_DAYS} days — skipping "
               f"(use --force to override).")
         return
@@ -113,11 +142,16 @@ def main():
     load_env()
     today = date.today().isoformat()
 
-    n_vol = snapshot_volumes(con, seeds, today)
-    print(f"volumes: {n_vol} keywords snapshotted")
-    n_q = mine_questions(con, seeds, today)
+    if args.only in (None, "volumes"):
+        n_vol = snapshot_volumes(con, seeds, today)
+        print(f"volumes: {n_vol} keywords snapshotted")
+    if args.only in (None, "mentions"):
+        n_q = mine_questions(con, seeds, today)
+        print(f"discovered: {n_q} relevant real-user questions stored")
+    if args.only in (None, "silent"):
+        n_s = check_silent_citations(con, today)
+        print(f"silent citations: {n_s} answers source your site without naming you")
     con.commit()
-    print(f"discovered: {n_q} relevant real-user questions stored")
 
 
 if __name__ == "__main__":

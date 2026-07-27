@@ -156,6 +156,16 @@ def exec_summary(con):
                 f"(see Discovered prompts) — candidates to add to the tracker.")
     except sqlite3.OperationalError:
         pass
+    try:
+        row = con.execute(
+            "SELECT COUNT(*) FROM silent WHERE day=(SELECT MAX(day) FROM silent)"
+        ).fetchone()
+        if row and row[0]:
+            insights.append(
+                f"<b>{row[0]} AI answers use your content without naming your brand</b> "
+                f"(silent citations — see below).")
+    except sqlite3.OperationalError:
+        pass
 
     kpis = (
         f"<div class='kpis'>"
@@ -259,6 +269,38 @@ def discovered_section(con):
     return "".join(out)
 
 
+def silent_section(con):
+    try:
+        days = [r[0] for r in con.execute(
+            "SELECT DISTINCT day FROM silent ORDER BY day DESC LIMIT 2")]
+    except sqlite3.OperationalError:
+        return ""
+    if not days:
+        return ""
+    rows = con.execute(
+        "SELECT query, platform, ai_search_volume FROM silent "
+        "WHERE day=? ORDER BY ai_search_volume DESC", (days[0],)).fetchall()
+    prev = None
+    if len(days) > 1:
+        prev = con.execute("SELECT COUNT(*) FROM silent WHERE day=?",
+                           (days[1],)).fetchone()[0]
+    trend = f" · was {prev} at previous check" if prev is not None else ""
+    out = [f"<h2>Silent citations — your content, no brand credit "
+           f"<span class='sub'>({len(rows)} found{esc(trend)})</span></h2>"
+           f"<div class='card'><table>"
+           f"<tr><th>query</th><th>platform</th><th>AI searches/mo</th></tr>"]
+    for q, platform, vol in rows:
+        out.append(f"<tr><td>{esc(q)}</td>"
+                   f"<td><span class='chip'>{esc(platform)}</span></td>"
+                   f"<td class='vol'>{vol}</td></tr>")
+    out.append("</table><p class='sub'>AI answers that cite "
+               f"{esc(MY_DOMAIN)} as a source but never name your brand. Fix: weave "
+               "brand references into these pages so the AI lifts the name along "
+               "with the content. Checked monthly (top-100 sample of answers "
+               "referencing your domain).</p></div>")
+    return "".join(out)
+
+
 def latest_section(con):
     row = con.execute("SELECT MAX(day) FROM snapshots").fetchone()
     if not row or not row[0]:
@@ -300,7 +342,7 @@ def main():
             f"platforms: {esc(', '.join(PLATFORMS))} · "
             f"generated {datetime.now():%Y-%m-%d %H:%M}</div>"
             f"{exec_summary(con)}{trend_section(con)}{volume_section(con)}"
-            f"{discovered_section(con)}{latest_section(con)}"
+            f"{discovered_section(con)}{silent_section(con)}{latest_section(con)}"
             f"</div></body></html>")
     OUT.write_text(page, encoding="utf-8")
     print(f"Dashboard written to: {OUT}")
