@@ -32,7 +32,7 @@ ENV_PATH = HERE / ".env"
 BRANDS = ["vantage circle", "bonusly", "kudos", "achievers", "awardco",
           "nectar", "motivosity", "o.c. tanner", "workhuman"]
 MY_DOMAIN = "vantagecircle.com"      # used to detect citations of your site
-PLATFORMS = ["chat_gpt", "claude", "gemini", "perplexity"]
+PLATFORMS = ["chat_gpt", "perplexity"]  # claude/gemini dropped 2026-07-27 to halve cost — re-add anytime
 MODELS = {"chat_gpt": "gpt-5.5",     # pinned for comparable runs over time
           "claude": "claude-sonnet-4-6",
           "gemini": "gemini-2.5-flash",

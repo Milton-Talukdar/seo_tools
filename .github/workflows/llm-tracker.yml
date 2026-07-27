@@ -2,7 +2,7 @@ name: LLM visibility tracker
 
 on:
   schedule:
-    - cron: "47 6 * * 1"   # Mondays 06:47 UTC
+    - cron: "47 6 * * 1"   # Mondays 06:47 UTC — tracker itself runs biweekly (see gate step)
   workflow_dispatch:        # manual run from the Actions tab
 
 permissions:
@@ -21,7 +21,12 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Biweekly gate (run tracker on even ISO weeks only)
+        id: gate
+        run: echo "run=$(( $(date +%V) % 2 == 0 ))" >> "$GITHUB_OUTPUT"
+
       - name: Run tracker (DataForSEO API)
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.run == '1'
         env:
           DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
           DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}

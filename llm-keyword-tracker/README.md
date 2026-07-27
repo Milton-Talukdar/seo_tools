@@ -1,8 +1,9 @@
 # LLM Keyword Tracker
 
-Tracks how often your brand (and competitors) is mentioned by ChatGPT, Claude, Gemini,
-and Perplexity for a fixed set of prompts, using the DataForSEO AI Optimization API.
-Snapshots are stored in SQLite so you can watch share of voice trend week over week.
+Tracks how often your brand (and competitors) is mentioned by ChatGPT and Perplexity
+(Claude and Gemini were dropped to halve cost — re-add them in `PLATFORMS` anytime)
+for a fixed set of prompts, using the DataForSEO AI Optimization API.
+Snapshots are stored in SQLite so you can watch share of voice trend run over run.
 
 ## Files
 
@@ -18,24 +19,23 @@ Snapshots are stored in SQLite so you can watch share of voice trend week over w
 ```bash
 python3 llm_track.py --dry-run    # preview calls, zero cost
 python3 llm_track.py --limit 2    # cheap smoke test (first 2 prompts only)
-python3 llm_track.py              # full run: all prompts x 4 platforms
+python3 llm_track.py              # full run: all prompts x 2 platforms
 python3 llm_track.py --report     # share-of-voice trend, no API calls
-python3 discover.py --force       # volumes + real-prompt mining (~$1.25)
+python3 discover.py --force       # volumes + real-prompt mining (~$1.45)
 python3 dashboard.py --open       # build index.html and open it in your browser
 ```
 
-## Weekly schedule (cron)
+## Biweekly schedule
 
-```cron
-17 6 * * 1  cd /Users/miltontalukdar/Desktop/Kimiseo/seo_tools/llm-keyword-tracker && /usr/bin/python3 llm_track.py >> tracker.log 2>&1
-```
-
-Mondays 06:17. Weekly is enough — LLM answers drift slowly.
+The GitHub Action (`.github/workflows/llm-tracker.yml`) fires every Monday 06:47 UTC but
+only runs the tracker on even ISO weeks — biweekly is enough, LLM answers drift slowly.
+Manual runs (Actions tab → Run workflow) always execute.
 
 ## Cost
 
-~$0.01 per prompt per platform. The seeded 6 prompts x 4 platforms x weekly ≈ $1/month.
+~$0.01 per prompt per platform. 16 prompts x 2 platforms x biweekly ≈ $0.70/month (~$8/yr).
 discover.py adds ~$1.45/month (volumes + LLM Mentions mining + silent-citation check), running monthly.
+Total run rate ≈ $26/yr.
 
 ## Customizing
 
