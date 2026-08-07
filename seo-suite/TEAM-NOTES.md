@@ -6,8 +6,10 @@
 
 One dashboard that answers three questions every week:
 
-1. **Where do we rank on Google?** Our positions for ~180 tracked keywords in
-   the US top 100, with week-over-week movers.
+1. **Where do we rank on Google?** Our positions for ~1,000 tracked keywords
+   (Vantage Circle and Vantage Fit, each in their own tab) in the US top 100,
+   with week-over-week movers, owner tags, volume, difficulty, intent, and SERP
+   features — searchable, filterable by tag, and sortable by any column.
 2. **How is our link profile doing?** Total backlinks and referring domains,
    plus how many domains we gained or lost.
 3. **Does AI recommend us?** Whether ChatGPT and Perplexity mention
@@ -36,6 +38,6 @@ One dashboard that answers three questions every week:
 
 ## Cost
 
-About **$33/year** from our existing DataForSEO subscription (rank tracking
-~$6, backlinks pennies, AI tracking ~$26). Runs fully automatically — no
-manual work needed.
+About **$68/year** from our existing DataForSEO subscription (rank tracking
+~$31, backlinks pennies, AI tracking ~$26, keyword data refresh ~$10). Runs
+fully automatically — no manual work needed.

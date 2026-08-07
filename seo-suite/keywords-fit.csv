@@ -1,0 +1,4 @@
+# Vantage Fit (vantagefit.io) tracked keywords — one per line, format: keyword,tag.
+# Paste the keyword+tag rows from your Vantage Fit Ahrefs rank-tracker overview
+# export here, or run:  python3 import_ahrefs.py overview <fit-export.csv> --property vantagefit
+# Until this file has keywords, rank_track.py skips the vantagefit property.

@@ -65,12 +65,21 @@ def dfs_post(path, payload, retries=2):
 
 
 def init_db():
-    """One DB for the whole suite; every module's table is created here."""
+    """One DB for the whole suite; every module's table is created here.
+
+    Migrations are additive and guarded by PRAGMA table_info, so an existing
+    DB upgrades cleanly on the next run of any module."""
     con = sqlite3.connect(DB_PATH)
     con.executescript("""
     CREATE TABLE IF NOT EXISTS rank_snapshots(
-        day TEXT, keyword TEXT, position INTEGER, url TEXT, serp_features TEXT,
-        PRIMARY KEY(day, keyword));
+        day TEXT, keyword TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle',
+        position INTEGER, url TEXT, serp_features TEXT,
+        PRIMARY KEY(day, keyword, property));
+    CREATE TABLE IF NOT EXISTS keyword_meta(
+        property TEXT, keyword TEXT, tag TEXT, volume INTEGER, kd REAL,
+        cpc REAL, intent TEXT, branded INTEGER, serp_features TEXT,
+        traffic_prev REAL, traffic_cur REAL,
+        PRIMARY KEY(property, keyword));
     CREATE TABLE IF NOT EXISTS backlink_snapshots(
         day TEXT, backlinks INTEGER, refdomains INTEGER, rank INTEGER,
         PRIMARY KEY(day));
@@ -92,6 +101,11 @@ def init_db():
         day TEXT, query TEXT, platform TEXT, ai_search_volume INTEGER,
         PRIMARY KEY(day, query, platform));
     """)
+    # v2 migration: rank_snapshots gained a `property` column
+    cols = [r[1] for r in con.execute("PRAGMA table_info(rank_snapshots)")]
+    if cols and "property" not in cols:
+        con.execute("ALTER TABLE rank_snapshots ADD COLUMN property "
+                    "TEXT NOT NULL DEFAULT 'vantagecircle'")
     return con
 
 
@@ -209,6 +223,28 @@ code { background: #eef1f6; padding: 1px 6px; border-radius: 6px; font-size: 12p
 th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 th.sortable:hover { color: var(--accent); }
 th.sortable .arrow { font-size: 9px; color: var(--accent); }
+/* ---- rank tracker v2: property sub-tabs + ahrefs-style cells ---- */
+.rank-tabs { display: flex; gap: 6px; margin: 6px 0 0; }
+.rank-tab { padding: 7px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600;
+            color: #475569; background: #eef1f6; cursor: pointer; user-select: none; }
+.rank-tab:hover { background: #e2e8f0; }
+.rank-tab.active { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; }
+.has-js .rank-prop { display: none; }
+.has-js .rank-prop.active { display: block; }
+.table-tools select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px;
+                      font-size: 13px; font-family: inherit; background: #f8fafc; color: var(--ink); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pos-chip { display: inline-block; min-width: 34px; padding: 1px 7px; border-radius: 7px;
+            font-size: 11px; font-weight: 700; text-align: center; }
+.pos-chip.up { background: var(--you-soft); color: #047857; }
+.pos-chip.down { background: var(--rose-soft); color: var(--rose); }
+.pos-chip.new { background: var(--amber-soft); color: var(--amber); }
+.pos-chip.flat { background: #eef1f6; color: #64748b; }
+.badge-b { display: inline-block; padding: 1px 6px; border-radius: 6px; font-size: 10.5px;
+           font-weight: 800; background: var(--amber-soft); color: var(--amber); }
+.feat-chip { display: inline-block; padding: 1px 7px; margin: 1px 2px 1px 0; border-radius: 6px;
+             font-size: 10.5px; font-weight: 600; background: #eef1f6; color: #475569; }
+.tag-cell { color: var(--muted); font-size: 12px; }
 @media (max-width: 860px) {
   .sidebar { position: static; width: auto; flex-direction: row; align-items: center;
              overflow-x: auto; padding: 10px; border-right: none;
@@ -221,9 +257,9 @@ th.sortable .arrow { font-size: 9px; color: var(--accent); }
   body { background: #fff; }
   .hero { background: #fff; color: #000; box-shadow: none; border: 1px solid #ccc; }
   .hero .sub, .eyebrow { color: #444; }
-  details, .no-print, .sidebar, .table-tools { display: none; }
+  details, .no-print, .sidebar, .table-tools, .rank-tabs { display: none; }
   .content { margin-left: 0; }
-  .has-js .panel { display: block !important; }
+  .has-js .panel, .has-js .rank-prop { display: block !important; }
   .card, .kpi { break-inside: avoid; box-shadow: none; }
 }
 """

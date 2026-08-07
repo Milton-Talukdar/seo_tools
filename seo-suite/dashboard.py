@@ -21,12 +21,14 @@ from pathlib import Path
 
 from common import DASHBOARD_CSS, DB_PATH
 from llm_visibility import BRANDS, MY_DOMAIN, PLATFORMS, PROMPTS_CSV
+from rank_track import PROPERTIES
 
 OUT = Path(__file__).parent / "index.html"  # index.html = clean GitHub Pages URL
 YOU = BRANDS[0]  # first brand in the list = your brand
 NOT_FOUND = 101  # rank sentinel: deeper than the tracked top 100
 
-# vanilla JS: sidebar panel switching + rank-table live filter/sort.
+# vanilla JS: sidebar panel switching + rank sub-tabs + per-table
+# live search / tag filter / column sorting.
 # (plain string, not an f-string — the braces are literal JS/CSS)
 SCRIPT = """
 (function () {
@@ -47,71 +49,101 @@ SCRIPT = """
       }
       var t = it.getAttribute('data-target');
       if (t) {
+        var rt = document.querySelector(".rank-tab[data-prop='" + t + "']");
+        if (rt) rt.click();   // sidebar sub-item also activates the rank sub-tab
         var te = document.getElementById(t);
         if (te) te.scrollIntoView({ behavior: 'smooth' });
       }
     });
   });
 
-  // ---- rank table: live search + column sorting ----
-  var search = document.getElementById('rank-search');
-  if (!search) return;
-  var tbody = document.getElementById('rank-body');
-  var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
-  var count = document.getElementById('rank-count');
-  var ths = document.querySelectorAll('#rank-table th.sortable');
-  var sortKey = 'position', sortDir = 1;
-
-  function applyFilter() {
-    var q = search.value.toLowerCase(), n = 0;
-    rows.forEach(function (r) {
-      var show = r.getAttribute('data-keyword').indexOf(q) > -1;
-      r.style.display = show ? '' : 'none';
-      if (show) n++;
-    });
-    count.textContent = n + ' of ' + rows.length + ' keywords';
-  }
-
-  function keyVal(r, k) {
-    var v = r.getAttribute('data-' + k);
-    if (k === 'keyword') return v;
-    return v === '' || v === null ? null : parseFloat(v);  // '' = unranked / no comparison
-  }
-
-  function cmp(a, b) {
-    var va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
-    if (sortKey !== 'keyword') {          // missing values always sort last
-      if (va === null && vb === null) return 0;
-      if (va === null) return 1;
-      if (vb === null) return -1;
-    }
-    if (va < vb) return -sortDir;
-    if (va > vb) return sortDir;
-    return 0;
-  }
-
-  function applySort() {
-    rows.sort(cmp);
-    rows.forEach(function (r) { tbody.appendChild(r); });
-    ths.forEach(function (th) {
-      var arr = th.querySelector('.arrow');
-      if (arr) arr.textContent =
-        th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
-    });
-  }
-
-  ths.forEach(function (th) {
-    th.addEventListener('click', function () {
-      var k = th.getAttribute('data-sort');
-      if (k === sortKey) { sortDir = -sortDir; }
-      else { sortKey = k; sortDir = k === 'change' ? -1 : 1; }  // biggest movers first
-      applySort();
+  // ---- rank tracker: property sub-tabs ----
+  var tabs = document.querySelectorAll('.rank-tab');
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      tabs.forEach(function (x) { x.classList.remove('active'); });
+      t.classList.add('active');
+      document.querySelectorAll('.rank-prop').forEach(function (el) {
+        el.classList.remove('active');
+      });
+      var el = document.getElementById(t.getAttribute('data-prop'));
+      if (el) el.classList.add('active');
     });
   });
 
-  search.addEventListener('input', applyFilter);
-  applySort();
-  applyFilter();
+  // ---- rank tracker: per-property search + tag filter + sorting ----
+  document.querySelectorAll('.rank-prop').forEach(function (box) {
+    var search = box.querySelector('.rank-search');
+    var tagSel = box.querySelector('.tag-filter');
+    var tbody = box.querySelector('tbody');
+    if (!tbody) return;
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    var count = box.querySelector('.rank-count');
+    var ths = box.querySelectorAll('th.sortable');
+    var sortKey = 'position', sortDir = 1;
+
+    function applyFilter() {
+      var q = search ? search.value.toLowerCase() : '';
+      var tag = tagSel ? tagSel.value : '';
+      var n = 0;
+      rows.forEach(function (r) {
+        var ok = r.getAttribute('data-search').indexOf(q) > -1;
+        if (ok && tag) {
+          var rt = r.getAttribute('data-tag');
+          ok = tag === '__untagged__' ? rt === '' : rt === tag;
+        }
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' keywords';
+    }
+
+    function keyVal(r, k) {
+      var v = r.getAttribute('data-' + k);
+      if (k === 'keyword') return v;
+      return v === '' || v === null ? null : parseFloat(v);  // '' = unranked / no data
+    }
+
+    function cmp(a, b) {
+      var va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+      if (sortKey !== 'keyword') {          // missing values always sort last
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;
+        if (vb === null) return -1;
+      }
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    }
+
+    function applySort() {
+      rows.sort(cmp);
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      ths.forEach(function (th) {
+        var arr = th.querySelector('.arrow');
+        if (arr) arr.textContent =
+          th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+      });
+    }
+
+    ths.forEach(function (th) {
+      th.addEventListener('click', function () {
+        var k = th.getAttribute('data-sort');
+        if (k === sortKey) { sortDir = -sortDir; }
+        else {
+          sortKey = k;
+          // keyword + position: best/ascending first; volume/traffic/kd: biggest first
+          sortDir = (k === 'keyword' || k === 'position') ? 1 : -1;
+        }
+        applySort();
+      });
+    });
+
+    if (search) search.addEventListener('input', applyFilter);
+    if (tagSel) tagSel.addEventListener('change', applyFilter);
+    applySort();
+    applyFilter();
+  });
 })();
 """
 
@@ -206,73 +238,196 @@ def exec_summary(con):
 
 
 # ---------------------------------------------------------------- rank tracker
-def rank_sparkline(con, keyword):
-    rows = con.execute(
-        "SELECT day, position FROM rank_snapshots WHERE keyword=? "
-        "ORDER BY day DESC LIMIT 8", (keyword,)).fetchall()
-    vals = [p if p is not None else NOT_FOUND for _, p in reversed(rows)]
-    if len(vals) < 2:
-        return "<span class='sub'>—</span>"
-    # better rank = taller bar
-    bars = "".join(f"<i style='height:{max(1, round((NOT_FOUND - v) / NOT_FOUND * 18))}px'></i>"
-                   for v in vals)
-    return f"<span class='spark'>{bars}</span>"
+INTENT_SHORT = {"informational": "info", "navigational": "nav",
+                "commercial": "com", "transactional": "trans"}
 
 
-def rank_section(con):
-    days = table_days(con, "rank_snapshots")
+def prop_days(con, prop, limit=2):
+    counts = con.execute(
+        "SELECT day, COUNT(*) FROM rank_snapshots WHERE property=? "
+        "GROUP BY day ORDER BY day DESC", (prop,)).fetchall()
+    if not counts:
+        return []
+    # ignore partial days (e.g. --limit smoke tests): keep days covering
+    # at least half of the fullest day's keywords
+    fullest = max(c for _, c in counts)
+    return [d for d, c in counts if c >= fullest / 2][:limit]
+
+
+def pos_cell(prev, cur, has_prev):
+    """Ahrefs-style: current position, 'from prev', colored change chip."""
+    cur_s = fmt_pos(cur)
+    if not has_prev:
+        return f"<td class='num'><b>{cur_s}</b></td>", ""
+    if prev is None and cur is None:
+        return "<td class='num'>—</td>", ""
+    if prev is None:  # previously unranked, now ranking
+        return (f"<td class='num'><b>{cur_s}</b> "
+                f"<span class='pos-chip new'>New</span></td>",
+                str(NOT_FOUND - cur))
+    if cur is None:
+        return (f"<td class='num'>— <span class='sub'>from {prev}</span> "
+                f"<span class='pos-chip down'>▼{NOT_FOUND - prev if False else 'out'}</span></td>",
+                str((prev or NOT_FOUND) - NOT_FOUND))
+    d = prev - cur
+    if d > 0:
+        chip = f"<span class='pos-chip up'>▲{d}</span>"
+    elif d < 0:
+        chip = f"<span class='pos-chip down'>▼{abs(d)}</span>"
+    else:
+        chip = "<span class='pos-chip flat'>·</span>"
+    prev_s = f" <span class='sub'>from {prev}</span>" if d else ""
+    return f"<td class='num'><b>{cur_s}</b>{prev_s} {chip}</td>", str(d)
+
+
+def traffic_cell(meta):
+    cur, prev = meta.get("traffic_cur"), meta.get("traffic_prev")
+    if cur is None:
+        return "<td class='num sub'>—</td>", ""
+    cur_s = f"{cur:,.0f}"
+    if prev is None:
+        return f"<td class='num'>{cur_s}</td>", str(cur)
+    d = cur - prev
+    if d > 0:
+        delta = f" <span class='delta up'>+{d:,.0f}</span>"
+    elif d < 0:
+        delta = f" <span class='delta down'>{d:,.0f}</span>"
+    else:
+        delta = ""
+    return f"<td class='num'>{cur_s}{delta}</td>", str(cur)
+
+
+def intent_cell(meta):
+    try:
+        flags = json.loads(meta.get("intent") or "{}")
+    except (TypeError, ValueError):
+        flags = {}
+    labels = [short for name, short in INTENT_SHORT.items() if flags.get(name)]
+    if not labels:
+        return "<td class='sub'>—</td>"
+    return "<td>" + " ".join(f"<span class='feat-chip'>{l}</span>"
+                             for l in labels) + "</td>"
+
+
+def features_cell(meta):
+    try:
+        feats = json.loads(meta.get("serp_features") or "[]")
+    except (TypeError, ValueError):
+        feats = []
+    if not feats:
+        return "<td class='sub'>—</td>"
+    shown = "".join(f"<span class='feat-chip'>{esc(f)}</span>" for f in feats[:4])
+    more = f"<span class='sub'>+{len(feats) - 4}</span>" if len(feats) > 4 else ""
+    return f"<td>{shown}{more}</td>"
+
+
+def rank_property_block(con, prop, active):
+    cfg = PROPERTIES[prop]
+    days = prop_days(con, prop)
     if not days:
-        return ""
+        return "", None
     rows = con.execute(
-        "SELECT keyword, position, url FROM rank_snapshots WHERE day=?",
-        (days[0],)).fetchall()
+        "SELECT keyword, position, url FROM rank_snapshots "
+        "WHERE day=? AND property=?", (days[0], prop)).fetchall()
     if not rows:
-        return ""
+        return "", None
     prev = {}
     if len(days) > 1:
         prev = dict(con.execute(
-            "SELECT keyword, position FROM rank_snapshots WHERE day=?",
-            (days[1],)).fetchall())
+            "SELECT keyword, position FROM rank_snapshots "
+            "WHERE day=? AND property=?", (days[1], prop)).fetchall())
+    meta = {}
+    for r in con.execute(
+            "SELECT keyword, tag, volume, kd, cpc, intent, branded, serp_features,"
+            " traffic_prev, traffic_cur FROM keyword_meta WHERE property=?",
+            (prop,)):
+        meta[r[0]] = {"tag": r[1] or "", "volume": r[2], "kd": r[3], "cpc": r[4],
+                      "intent": r[5], "branded": r[6], "serp_features": r[7],
+                      "traffic_prev": r[8], "traffic_cur": r[9]}
     rows.sort(key=lambda r: (r[1] is None, r[1] or NOT_FOUND, r[0]))
-    out = [f"<h2>Rank Tracker — Google US top 100 "
-           f"<span class='sub'>({esc(days[0])}, {len(rows)} keywords)</span></h2>"
-           "<div class='card'>"
-           "<div class='table-tools no-print'>"
-           "<input id='rank-search' type='search' placeholder='Search keywords…'>"
-           f"<span id='rank-count' class='sub'>{len(rows)} keywords</span></div>"
-           "<table id='rank-table'><thead><tr>"
-           "<th class='sortable' data-sort='keyword'>keyword <span class='arrow'></span></th>"
-           "<th class='sortable' data-sort='position'>position <span class='arrow'></span></th>"
-           "<th class='sortable' data-sort='change'>vs prev <span class='arrow'></span></th>"
-           "<th>recent trend</th><th>ranking url</th></tr></thead>"
-           "<tbody id='rank-body'>"]
+    tags = sorted({m["tag"] for m in meta.values() if m["tag"]})
+
+    out = [f"<div class='rank-prop{' active' if active else ''}' id='rank-{prop}'>"
+           f"<div class='card'>"
+           f"<div class='table-tools no-print'>"
+           f"<input class='rank-search' type='search' placeholder='Search keywords or tags…'>"
+           f"<select class='tag-filter'>"
+           f"<option value=''>All tags</option>"]
+    for t in tags:
+        out.append(f"<option value='{esc(t.lower())}'>{esc(t)}</option>")
+    out.append(f"<option value='__untagged__'>Untagged</option></select>"
+               f"<span class='rank-count sub'>{len(rows)} keywords</span></div>"
+               f"<table class='rank-table'><thead><tr>"
+               f"<th class='sortable' data-sort='keyword'>Keyword <span class='arrow'></span></th>"
+               f"<th>Tag</th>"
+               f"<th class='sortable' data-sort='position'>Position <span class='arrow'></span></th>"
+               f"<th class='sortable' data-sort='volume'>Volume <span class='arrow'></span></th>"
+               f"<th class='sortable' data-sort='traffic'>Traffic <span class='arrow'></span></th>"
+               f"<th class='sortable' data-sort='kd'>KD <span class='arrow'></span></th>"
+               f"<th>Intent</th><th>Branded</th><th>SERP features</th><th>URL</th>"
+               f"</tr></thead><tbody>")
     for keyword, pos, url in rows:
-        if len(days) > 1 and keyword in prev:
-            d = (prev[keyword] or NOT_FOUND) - (pos or NOT_FOUND)
-            if d > 0:
-                delta = f"<span class='delta up'>+{d}</span>"
-            elif d < 0:
-                delta = f"<span class='delta down'>{d}</span>"
-            else:
-                delta = "<span class='sub'>·</span>"
-            data_change = str(d)
-        else:
-            delta = "<span class='sub'>—</span>"
-            data_change = ""
-        data_pos = "" if pos is None else str(pos)
-        short_url = url.replace("https://", "").replace("http://", "")[:55]
-        out.append(f"<tr data-keyword='{esc(keyword.lower())}' "
-                   f"data-position='{data_pos}' data-change='{data_change}'>"
-                   f"<td>{esc(keyword)}</td>"
-                   f"<td class='vol'>{fmt_pos(pos)}</td>"
-                   f"<td>{delta}</td>"
-                   f"<td>{rank_sparkline(con, keyword)}</td>"
-                   f"<td class='sub'>{esc(short_url)}</td></tr>")
-    out.append("</tbody></table><p class='sub'>First organic position for "
-               f"{esc(MY_DOMAIN)} per keyword (US, weekly via DataForSEO). "
-               "Trend bars: taller = better position; — = not in top 100. "
-               "<span class='no-print'>Type to filter; click a column header to sort.</span></p></div>")
-    return "".join(out)
+        m = meta.get(keyword, {"tag": "", "volume": None, "kd": None, "cpc": None,
+                               "intent": None, "branded": 0, "serp_features": None,
+                               "traffic_prev": None, "traffic_cur": None})
+        prev_pos = prev.get(keyword) if days and len(days) > 1 else None
+        has_prev = len(days) > 1 and keyword in prev
+        pos_html, data_change = pos_cell(prev_pos, pos, has_prev)
+        traffic_html, data_traffic = traffic_cell(m)
+        short_url = url.replace("https://", "").replace("http://", "")[:50]
+        vol = m["volume"]
+        kd = m["kd"]
+        out.append(
+            f"<tr data-keyword='{esc(keyword.lower())}' "
+            f"data-search='{esc((keyword + ' ' + m['tag']).lower())}' "
+            f"data-tag='{esc(m['tag'].lower())}' "
+            f"data-position='{'' if pos is None else pos}' "
+            f"data-change='{data_change}' "
+            f"data-volume='{'' if vol is None else vol}' "
+            f"data-traffic='{data_traffic}' "
+            f"data-kd='{'' if kd is None else kd}'>"
+            f"<td>{esc(keyword)}</td>"
+            f"<td class='tag-cell'>{esc(m['tag']) or '—'}</td>"
+            f"{pos_html}"
+            f"<td class='num'>{f'{vol:,}' if vol is not None else '<span class=sub>—</span>'}</td>"
+            f"{traffic_html}"
+            f"<td class='num'>{f'{kd:.0f}' if kd is not None else '<span class=sub>—</span>'}</td>"
+            f"{intent_cell(m)}"
+            f"<td>{'<span class=badge-b>B</span>' if m['branded'] else ''}</td>"
+            f"{features_cell(m)}"
+            f"<td class='sub'>{esc(short_url)}</td></tr>")
+    out.append("</tbody></table><p class='sub'>Google US top 100 for "
+               f"{esc(cfg['domain'])} — current: {esc(days[0])}"
+               + (f", previous: {esc(days[1])}" if len(days) > 1 else "")
+               + ". Volume / traffic / KD / intent from keyword_meta "
+               "(Ahrefs overview import + monthly enrich.py). "
+               "— = unranked or no data. "
+               "<span class='no-print'>Type to filter, pick a tag, click a column header to sort.</span></p>"
+               "</div></div>")
+    return "".join(out), {"id": f"rank-{prop}", "label": cfg["label"]}
+
+
+def rank_section(con):
+    """Returns (html, [(sub_id, sub_label), ...]) — sub-tabs per property."""
+    blocks, subs = [], []
+    any_days = [p for p in PROPERTIES if prop_days(con, p)]
+    for prop in PROPERTIES:
+        block, sub = rank_property_block(con, prop, active=(prop == any_days[0] if any_days else False))
+        if block:
+            blocks.append(block)
+            subs.append(sub)
+    if not blocks:
+        return "", []
+    tabs = ""
+    if len(blocks) > 1:
+        tabs = ("<div class='rank-tabs no-print'>" + "".join(
+            f"<span class='rank-tab{' active' if i == 0 else ''}' "
+            f"data-prop='{s['id']}'>{esc(s['label'])}</span>"
+            for i, s in enumerate(subs)) + "</div>")
+    latest = max(prop_days(con, p)[0] for p in any_days)
+    head = (f"<h2>Rank Tracker — Google US top 100 "
+            f"<span class='sub'>({esc(latest)})</span></h2>")
+    return head + tabs + "".join(blocks), [(s["id"], s["label"]) for s in subs]
 
 
 # ---------------------------------------------------------------- backlinks

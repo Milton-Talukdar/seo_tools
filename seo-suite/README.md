@@ -10,14 +10,16 @@ into this DB).
 
 ## Files
 
-- `rank_track.py` — Google US top-100 rank tracker (config constants at the top)
+- `rank_track.py` — Google US top-100 rank tracker, multi-property (config constants at the top)
 - `backlinks.py` — backlink totals + new/lost refdomain counts
 - `llm_visibility.py` — LLM share-of-voice tracker (port of llm_track.py)
 - `llm_discover.py` — monthly job: AI search volumes + real user questions (self-throttled to once per 25 days, `--force` to override)
-- `import_ahrefs.py` — ONE-TIME importer: Ahrefs rank CSV, lost-refdomains CSV, and old llm_visibility.db history
+- `enrich.py` — monthly job: refreshes volume + KD + intent in keyword_meta (self-throttled to once per 25 days, `--force` to override)
+- `import_ahrefs.py` — importer: Ahrefs overview export (positions + tags + volume/KD/intent + traffic), rank CSV, lost-refdomains CSV, and old llm_visibility.db history
 - `dashboard.py` — builds a single `index.html` with a section per module
 - `common.py` — shared plumbing (credentials, API POST, DB schema, dashboard CSS)
-- `keywords.csv` — tracked keywords, one per line; `#` lines are comments
+- `keywords.csv` — Vantage Circle tracked keywords, `keyword,tag` per line; `#` lines are comments (seeded with the 994-keyword Ahrefs export)
+- `keywords-fit.csv` — Vantage Fit tracked keywords, same format
 - `prompts.csv` / `seeds.csv` — LLM prompts and discovery seeds
 - `.env` — DataForSEO credentials (never commit; falls back to `../llm-keyword-tracker/.env`)
 - `seo_suite.db` — SQLite results, created on first run
@@ -27,15 +29,20 @@ into this DB).
 ```bash
 python3 rank_track.py --dry-run      # preview calls, zero cost
 python3 rank_track.py --limit 3      # cheap smoke test (first 3 keywords only)
-python3 rank_track.py                # full run: all keywords
+python3 rank_track.py --property vantagefit  # track just one property
+python3 rank_track.py                # full run: all properties, all keywords
 python3 rank_track.py --report       # movers + top-3/10/50 counts, no API calls
 python3 backlinks.py                 # backlink snapshot (~$0.02)
 python3 backlinks.py --report        # net change + notable losses, no API calls
 python3 llm_visibility.py            # LLM share-of-voice run
 python3 llm_discover.py --force      # volumes + real-prompt mining (~$1.45)
+python3 enrich.py --dry-run          # preview volume/KD/intent refresh cost
+python3 enrich.py --force            # refresh keyword_meta now (~$0.85)
 python3 dashboard.py --open          # build index.html and open it in your browser
 
-# one-time history imports (read-only on all sources):
+# Ahrefs history imports (read-only on all sources):
+python3 import_ahrefs.py overview ~/Downloads/vc-full-site_overview_….csv
+python3 import_ahrefs.py overview ~/Downloads/fit_overview_….csv --property vantagefit
 python3 import_ahrefs.py ranks ~/Downloads/ahrefs-rank-tracker.csv
 python3 import_ahrefs.py refdomains ~/Downloads/ahrefs-lost-refdomains.csv
 python3 import_ahrefs.py llm-history   # carries over old llm_visibility.db
@@ -50,20 +57,25 @@ Manual runs (Actions tab → Run workflow) always execute everything.
 
 ## Cost
 
-- Rank tracking: ~$0.0006/keyword → 182 keywords weekly ≈ $0.11/run ≈ **$6/yr**
+- Rank tracking: ~$0.0006/keyword → 994 keywords weekly ≈ $0.60/run ≈ **$31/yr**
 - Backlinks: two calls weekly — pennies (≈ $1/yr)
 - LLM visibility + discovery: ≈ **$26/yr** (unchanged from llm-keyword-tracker)
+- Keyword enrichment (volume/KD/intent): ≈ $0.85/month ≈ **$10/yr**
 
-Total run rate ≈ $33/yr on the existing DataForSEO subscription.
+Total run rate ≈ $68/yr on the existing DataForSEO subscription.
 
 ## Customizing
 
-- **Keywords:** replace `keywords.csv` with the keyword column from your Ahrefs
-  Rank Tracker export (one per line). The starter file holds the 20
-  highest-value keywords from the Apr–Jun 2026 MoM analysis.
+- **Keywords:** tracked keywords live in `keywords.csv` (Vantage Circle, 994
+  keywords seeded from the Ahrefs rank-tracker overview export, with owner tags
+  preserved) and `keywords-fit.csv` (Vantage Fit — paste keyword+tag rows there
+  or import a VF overview export with
+  `python3 import_ahrefs.py overview <file> --property vantagefit`).
+  Format: `keyword,tag` — one per line, tag optional.
 - **Brands / domain / models / location:** constants at the top of each module
-- **History:** if you have Ahrefs exports, run `import_ahrefs.py` once to
-  backfill rank and lost-refdomain history before the weekly runs start
+- **History:** `import_ahrefs.py overview` backfills previous/current positions,
+  tags, volume, KD, CPC, intent, SERP features, and traffic in one pass; run it
+  again any time you have a fresh Ahrefs export
 
 ## Notes
 
