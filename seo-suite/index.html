@@ -83,14 +83,53 @@ summary:hover { background: #e2e8f0; }
 .insights li { margin: 8px 0; font-size: 14px; color: #334155; line-height: 1.5; }
 .insights li::marker { color: var(--accent); }
 code { background: #eef1f6; padding: 1px 6px; border-radius: 6px; font-size: 12px; }
+/* ---- sidebar tool-switcher layout ---- */
+.sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 212px; background: #fff;
+           border-right: 1px solid var(--line); padding: 22px 14px; display: flex;
+           flex-direction: column; z-index: 10; }
+.side-brand { font-size: 14px; font-weight: 800; letter-spacing: -.01em;
+              padding: 4px 10px 16px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.side-brand span { display: block; color: var(--muted); font-weight: 600; font-size: 10px;
+                   text-transform: uppercase; letter-spacing: .12em; margin-top: 2px; }
+.nav-item { display: block; padding: 8px 10px; margin: 1px 0; border-radius: 9px;
+            font-size: 13px; font-weight: 600; color: #475569; cursor: pointer;
+            user-select: none; }
+.nav-item:hover { background: #f1f5f9; }
+.nav-item.active { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; }
+.nav-item.sub { padding-left: 24px; font-weight: 500; font-size: 12.5px; color: var(--muted); }
+.nav-item.sub.active { color: #fff; }
+.side-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--line);
+             color: var(--muted); font-size: 11px; line-height: 1.55; }
+.content { margin-left: 212px; }
+.has-js .panel { display: none; }
+.has-js .panel.active { display: block; }
+/* ---- rank table search/sort ---- */
+.table-tools { display: flex; align-items: center; gap: 12px; margin: 6px 0 4px; }
+.table-tools input { flex: 1; max-width: 320px; padding: 8px 12px; border: 1px solid var(--line);
+                     border-radius: 9px; font-size: 13px; font-family: inherit;
+                     background: #f8fafc; color: var(--ink); }
+.table-tools input:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: #fff; }
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--accent); }
+th.sortable .arrow { font-size: 9px; color: var(--accent); }
+@media (max-width: 860px) {
+  .sidebar { position: static; width: auto; flex-direction: row; align-items: center;
+             overflow-x: auto; padding: 10px; border-right: none;
+             border-bottom: 1px solid var(--line); }
+  .side-brand, .side-foot { display: none; }
+  .nav-item { white-space: nowrap; }
+  .content { margin-left: 0; }
+}
 @media print {
   body { background: #fff; }
   .hero { background: #fff; color: #000; box-shadow: none; border: 1px solid #ccc; }
   .hero .sub, .eyebrow { color: #444; }
-  details, .no-print { display: none; }
+  details, .no-print, .sidebar, .table-tools { display: none; }
+  .content { margin-left: 0; }
+  .has-js .panel { display: block !important; }
   .card, .kpi { break-inside: avoid; box-shadow: none; }
 }
-</style></head><body><div class='wrap'><div class='hero'><div class='eyebrow'>rank tracking · backlinks · AI search analytics</div><h1>Vantage Circle SEO Suite</h1><div class='sub'>domain: vantagecircle.com · platforms: chat_gpt, perplexity · generated 2026-08-07 17:34</div></div><h2>Executive summary</h2><div class='kpis'><div class='kpi'><div class='num'>0</div><div class='label'>keywords in Google top 3<br>0 in top 10 · 1 in top 50<br><span class='sub'>1/1 ranked (2026-08-07)</span></div></div><div class='kpi'><div class='num'>9,231</div><div class='label'>referring domains<br><span class='sub'>first run</span></div></div><div class='kpi'><div class='num'>3%</div><div class='label'>AI share of voice<br><span class='sub'>2026-07-27 · 30 answers</span></div></div></div><h2>Rank Tracker — Google US top 100 <span class='sub'>(2026-08-07, 1 keywords)</span></h2><div class='card'><table><tr><th>keyword</th><th>position</th><th>vs prev</th><th>recent trend</th><th>ranking url</th></tr><tr><td>employee recognition</td><td class='vol'>32</td><td><span class='sub'>—</span></td><td><span class='sub'>—</span></td><td class='sub'>www.vantagecircle.com/en/blog/employee-recognition/</td></tr></table><p class='sub'>First organic position for vantagecircle.com per keyword (US, weekly via DataForSEO). Trend bars: taller = better position; — = not in top 100.</p></div><h2>Backlinks</h2><div class='card'><b>Profile totals</b><table><tr><th>date</th><th>backlinks</th><th>refdomains</th><th></th><th>DFS rank</th></tr><tr><td><b>2026-08-07</b></td><td class='vol'>35,524</td><td class='vol'>9,231</td><td><div class='bar'><div style='width:100%'></div></div></td><td>362</td></tr></table></div><div class='card'><b>Recent new / lost referring domains</b><table><tr><th>date</th><th>event</th><th>domain</th><th>rank</th></tr><tr><td>2026-08-07</td><td><span class='chip none'>lost</span></td><td class='sub'>API aggregate count</td><td class='vol'>95</td></tr><tr><td>2026-08-07</td><td><span class='chip you'>new</span></td><td class='sub'>API aggregate count</td><td class='vol'>301</td></tr></table><p class='sub'>Weekly API runs record aggregate counts; per-domain detail comes from the one-time Ahrefs import (import_ahrefs.py).</p></div><h2>AI share of voice trend</h2><div class='card'><table><tr><th>run date</th><th>vantage circle (you)</th><th>bonusly</th><th>kudos</th><th>achievers</th><th>awardco</th><th>nectar</th><th>motivosity</th><th>o.c. tanner</th><th>workhuman</th></tr><tr><td><b>2026-07-27</b></td><td><div class="bar you"><div style="width:3%"></div></div><span class="sub">3%</span></td><td><div class="bar"><div style="width:27%"></div></div><span class="sub">27%</span></td><td><div class="bar"><div style="width:23%"></div></div><span class="sub">23%</span></td><td><div class="bar"><div style="width:20%"></div></div><span class="sub">20%</span></td><td><div class="bar"><div style="width:20%"></div></div><span class="sub">20%</span></td><td><div class="bar"><div style="width:23%"></div></div><span class="sub">23%</span></td><td><div class="bar"><div style="width:23%"></div></div><span class="sub">23%</span></td><td><div class="bar"><div style="width:0%"></div></div><span class="sub">0%</span></td><td><div class="bar"><div style="width:17%"></div></div><span class="sub">17%</span></td></tr><tr><td><b>2026-07-26</b></td><td><div class="bar you"><div style="width:21%"></div></div><span class="sub">21%</span></td><td><div class="bar"><div style="width:75%"></div></div><span class="sub">75%</span></td><td><div class="bar"><div style="width:33%"></div></div><span class="sub">33%</span></td><td><div class="bar"><div style="width:33%"></div></div><span class="sub">33%</span></td><td><div class="bar"><div style="width:21%"></div></div><span class="sub">21%</span></td><td><div class="bar"><div style="width:33%"></div></div><span class="sub">33%</span></td><td><div class="bar"><div style="width:42%"></div></div><span class="sub">42%</span></td><td><div class="bar"><div style="width:4%"></div></div><span class="sub">4%</span></td><td><div class="bar"><div style="width:42%"></div></div><span class="sub">42%</span></td></tr><tr><td><b>2026-07-23</b></td><td><div class="bar you"><div style="width:17%"></div></div><span class="sub">17%</span></td><td><div class="bar"><div style="width:67%"></div></div><span class="sub">67%</span></td><td><div class="bar"><div style="width:29%"></div></div><span class="sub">29%</span></td><td><div class="bar"><div style="width:33%"></div></div><span class="sub">33%</span></td><td><div class="bar"><div style="width:25%"></div></div><span class="sub">25%</span></td><td><div class="bar"><div style="width:29%"></div></div><span class="sub">29%</span></td><td><div class="bar"><div style="width:29%"></div></div><span class="sub">29%</span></td><td><div class="bar"><div style="width:0%"></div></div><span class="sub">0%</span></td><td><div class="bar"><div style="width:0%"></div></div><span class="sub">0%</span></td></tr></table><p class='sub'>% of prompt × platform answers mentioning each brand.</p></div><h2>Latest LLM run — 2026-07-27</h2><div class='card'><b>best employee survey and feedback tools for HR</b><div><span class="plat">chat_gpt</span> <span class="chip none">no brands</span> </div><div><span class="plat">perplexity</span> <span class="chip">bonusly</span> <span class="chip">motivosity</span> </div><details><summary>show raw answers</summary><div><span class='plat'>chat_gpt</span></div><div class='answer'>Here are some of the best employee survey and feedback tools for HR, depending on company size, budget, and how advanced you want the analytics to be.
+</style><script>document.documentElement.className += ' has-js';</script></head><body><nav class='sidebar'><div class='side-brand'>Vantage Circle<span>SEO Suite</span></div><a class='nav-item active' data-panel='exec'>Executive Summary</a><a class='nav-item' data-panel='rank'>Rank Tracker</a><a class='nav-item' data-panel='backlinks'>Backlinks</a><a class='nav-item' data-panel='llm'>LLM Visibility</a><a class='nav-item sub' data-panel='llm' data-target='llm-sov'>Share of voice</a><a class='nav-item sub' data-panel='llm' data-target='llm-latest'>Latest run</a><div class='side-foot'>4 modules<br>generated 2026-08-07 18:11</div></nav><div class='content'><div class='wrap'><div class='hero'><div class='eyebrow'>rank tracking · backlinks · AI search analytics</div><h1>Vantage Circle SEO Suite</h1><div class='sub'>domain: vantagecircle.com · platforms: chat_gpt, perplexity · generated 2026-08-07 18:11</div></div><section class='panel active' id='panel-exec'><h2>Executive summary</h2><div class='kpis'><div class='kpi'><div class='num'>0</div><div class='label'>keywords in Google top 3<br>0 in top 10 · 1 in top 50<br><span class='sub'>1/1 ranked (2026-08-07)</span></div></div><div class='kpi'><div class='num'>9,231</div><div class='label'>referring domains<br><span class='sub'>first run</span></div></div><div class='kpi'><div class='num'>3%</div><div class='label'>AI share of voice<br><span class='sub'>2026-07-27 · 30 answers</span></div></div></div></section><section class='panel' id='panel-rank'><h2>Rank Tracker — Google US top 100 <span class='sub'>(2026-08-07, 1 keywords)</span></h2><div class='card'><div class='table-tools no-print'><input id='rank-search' type='search' placeholder='Search keywords…'><span id='rank-count' class='sub'>1 keywords</span></div><table id='rank-table'><thead><tr><th class='sortable' data-sort='keyword'>keyword <span class='arrow'></span></th><th class='sortable' data-sort='position'>position <span class='arrow'></span></th><th class='sortable' data-sort='change'>vs prev <span class='arrow'></span></th><th>recent trend</th><th>ranking url</th></tr></thead><tbody id='rank-body'><tr data-keyword='employee recognition' data-position='32' data-change=''><td>employee recognition</td><td class='vol'>32</td><td><span class='sub'>—</span></td><td><span class='sub'>—</span></td><td class='sub'>www.vantagecircle.com/en/blog/employee-recognition/</td></tr></tbody></table><p class='sub'>First organic position for vantagecircle.com per keyword (US, weekly via DataForSEO). Trend bars: taller = better position; — = not in top 100. <span class='no-print'>Type to filter; click a column header to sort.</span></p></div></section><section class='panel' id='panel-backlinks'><h2>Backlinks</h2><div class='card'><b>Profile totals</b><table><tr><th>date</th><th>backlinks</th><th>refdomains</th><th></th><th>DFS rank</th></tr><tr><td><b>2026-08-07</b></td><td class='vol'>35,524</td><td class='vol'>9,231</td><td><div class='bar'><div style='width:100%'></div></div></td><td>362</td></tr></table></div><div class='card'><b>Recent new / lost referring domains</b><table><tr><th>date</th><th>event</th><th>domain</th><th>rank</th></tr><tr><td>2026-08-07</td><td><span class='chip none'>lost</span></td><td class='sub'>API aggregate count</td><td class='vol'>95</td></tr><tr><td>2026-08-07</td><td><span class='chip you'>new</span></td><td class='sub'>API aggregate count</td><td class='vol'>301</td></tr></table><p class='sub'>Weekly API runs record aggregate counts; per-domain detail comes from the one-time Ahrefs import (import_ahrefs.py).</p></div></section><section class='panel' id='panel-llm'><div id='llm-sov'><h2>AI share of voice trend</h2><div class='card'><table><tr><th>run date</th><th>vantage circle (you)</th><th>bonusly</th><th>kudos</th><th>achievers</th><th>awardco</th><th>nectar</th><th>motivosity</th><th>o.c. tanner</th><th>workhuman</th></tr><tr><td><b>2026-07-27</b></td><td><div class="bar you"><div style="width:3%"></div></div><span class="sub">3%</span></td><td><div class="bar"><div style="width:27%"></div></div><span class="sub">27%</span></td><td><div class="bar"><div style="width:23%"></div></div><span class="sub">23%</span></td><td><div class="bar"><div style="width:20%"></div></div><span class="sub">20%</span></td><td><div class="bar"><div style="width:20%"></div></div><span class="sub">20%</span></td><td><div class="bar"><div style="width:23%"></div></div><span class="sub">23%</span></td><td><div class="bar"><div style="width:23%"></div></div><span class="sub">23%</span></td><td><div class="bar"><div style="width:0%"></div></div><span class="sub">0%</span></td><td><div class="bar"><div style="width:17%"></div></div><span class="sub">17%</span></td></tr><tr><td><b>2026-07-26</b></td><td><div class="bar you"><div style="width:21%"></div></div><span class="sub">21%</span></td><td><div class="bar"><div style="width:75%"></div></div><span class="sub">75%</span></td><td><div class="bar"><div style="width:33%"></div></div><span class="sub">33%</span></td><td><div class="bar"><div style="width:33%"></div></div><span class="sub">33%</span></td><td><div class="bar"><div style="width:21%"></div></div><span class="sub">21%</span></td><td><div class="bar"><div style="width:33%"></div></div><span class="sub">33%</span></td><td><div class="bar"><div style="width:42%"></div></div><span class="sub">42%</span></td><td><div class="bar"><div style="width:4%"></div></div><span class="sub">4%</span></td><td><div class="bar"><div style="width:42%"></div></div><span class="sub">42%</span></td></tr><tr><td><b>2026-07-23</b></td><td><div class="bar you"><div style="width:17%"></div></div><span class="sub">17%</span></td><td><div class="bar"><div style="width:67%"></div></div><span class="sub">67%</span></td><td><div class="bar"><div style="width:29%"></div></div><span class="sub">29%</span></td><td><div class="bar"><div style="width:33%"></div></div><span class="sub">33%</span></td><td><div class="bar"><div style="width:25%"></div></div><span class="sub">25%</span></td><td><div class="bar"><div style="width:29%"></div></div><span class="sub">29%</span></td><td><div class="bar"><div style="width:29%"></div></div><span class="sub">29%</span></td><td><div class="bar"><div style="width:0%"></div></div><span class="sub">0%</span></td><td><div class="bar"><div style="width:0%"></div></div><span class="sub">0%</span></td></tr></table><p class='sub'>% of prompt × platform answers mentioning each brand.</p></div></div><div id='llm-latest'><h2>Latest LLM run — 2026-07-27</h2><div class='card'><b>best employee survey and feedback tools for HR</b><div><span class="plat">chat_gpt</span> <span class="chip none">no brands</span> </div><div><span class="plat">perplexity</span> <span class="chip">bonusly</span> <span class="chip">motivosity</span> </div><details><summary>show raw answers</summary><div><span class='plat'>chat_gpt</span></div><div class='answer'>Here are some of the best employee survey and feedback tools for HR, depending on company size, budget, and how advanced you want the analytics to be.
 
 | Tool | Best for | Key strengths |
 |---|---|---|
@@ -2039,4 +2078,89 @@ If you want a practical buying checklist, prioritize these three questions:
 - Can rewards be personalized and meaningful across different teams and locations?
 - Can HR see whether the program is driving participation and engagement?[1][4][6][12]
 
-If you want, I can also turn this into a **vendor evaluation scorecard** you can use to compare platforms side by side.</div></details></div></div></body></html>
+If you want, I can also turn this into a **vendor evaluation scorecard** you can use to compare platforms side by side.</div></details></div></div></section></div></div><script>
+(function () {
+  // ---- sidebar panel switching ----
+  var items = document.querySelectorAll('.nav-item');
+  items.forEach(function (it) {
+    it.addEventListener('click', function () {
+      var p = it.getAttribute('data-panel');
+      if (p) {
+        items.forEach(function (n) { n.classList.remove('active'); });
+        it.classList.add('active');
+        document.querySelectorAll('.panel').forEach(function (el) {
+          el.classList.remove('active');
+        });
+        var el = document.getElementById('panel-' + p);
+        if (el) el.classList.add('active');
+        window.scrollTo(0, 0);
+      }
+      var t = it.getAttribute('data-target');
+      if (t) {
+        var te = document.getElementById(t);
+        if (te) te.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+
+  // ---- rank table: live search + column sorting ----
+  var search = document.getElementById('rank-search');
+  if (!search) return;
+  var tbody = document.getElementById('rank-body');
+  var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+  var count = document.getElementById('rank-count');
+  var ths = document.querySelectorAll('#rank-table th.sortable');
+  var sortKey = 'position', sortDir = 1;
+
+  function applyFilter() {
+    var q = search.value.toLowerCase(), n = 0;
+    rows.forEach(function (r) {
+      var show = r.getAttribute('data-keyword').indexOf(q) > -1;
+      r.style.display = show ? '' : 'none';
+      if (show) n++;
+    });
+    count.textContent = n + ' of ' + rows.length + ' keywords';
+  }
+
+  function keyVal(r, k) {
+    var v = r.getAttribute('data-' + k);
+    if (k === 'keyword') return v;
+    return v === '' || v === null ? null : parseFloat(v);  // '' = unranked / no comparison
+  }
+
+  function cmp(a, b) {
+    var va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+    if (sortKey !== 'keyword') {          // missing values always sort last
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+    }
+    if (va < vb) return -sortDir;
+    if (va > vb) return sortDir;
+    return 0;
+  }
+
+  function applySort() {
+    rows.sort(cmp);
+    rows.forEach(function (r) { tbody.appendChild(r); });
+    ths.forEach(function (th) {
+      var arr = th.querySelector('.arrow');
+      if (arr) arr.textContent =
+        th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+    });
+  }
+
+  ths.forEach(function (th) {
+    th.addEventListener('click', function () {
+      var k = th.getAttribute('data-sort');
+      if (k === sortKey) { sortDir = -sortDir; }
+      else { sortKey = k; sortDir = k === 'change' ? -1 : 1; }  // biggest movers first
+      applySort();
+    });
+  });
+
+  search.addEventListener('input', applyFilter);
+  applySort();
+  applyFilter();
+})();
+</script></body></html>

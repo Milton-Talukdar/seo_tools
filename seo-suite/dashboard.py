@@ -2,8 +2,10 @@
 """
 dashboard.py — generate a self-contained HTML dashboard from seo_suite.db.
 
-One page, one section per module; every section hides cleanly when its table
-is missing or empty.
+One page with a left sidebar tool-switcher: Executive Summary, Rank Tracker
+(searchable/sortable), Backlinks, and LLM Visibility (share-of-voice trend,
+volumes, discovered prompts, silent citations, latest run). Every panel hides
+cleanly when its table is missing or empty.
 
 Usage:
     python3 dashboard.py           # writes index.html and prints its path
@@ -23,6 +25,95 @@ from llm_visibility import BRANDS, MY_DOMAIN, PLATFORMS, PROMPTS_CSV
 OUT = Path(__file__).parent / "index.html"  # index.html = clean GitHub Pages URL
 YOU = BRANDS[0]  # first brand in the list = your brand
 NOT_FOUND = 101  # rank sentinel: deeper than the tracked top 100
+
+# vanilla JS: sidebar panel switching + rank-table live filter/sort.
+# (plain string, not an f-string — the braces are literal JS/CSS)
+SCRIPT = """
+(function () {
+  // ---- sidebar panel switching ----
+  var items = document.querySelectorAll('.nav-item');
+  items.forEach(function (it) {
+    it.addEventListener('click', function () {
+      var p = it.getAttribute('data-panel');
+      if (p) {
+        items.forEach(function (n) { n.classList.remove('active'); });
+        it.classList.add('active');
+        document.querySelectorAll('.panel').forEach(function (el) {
+          el.classList.remove('active');
+        });
+        var el = document.getElementById('panel-' + p);
+        if (el) el.classList.add('active');
+        window.scrollTo(0, 0);
+      }
+      var t = it.getAttribute('data-target');
+      if (t) {
+        var te = document.getElementById(t);
+        if (te) te.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+
+  // ---- rank table: live search + column sorting ----
+  var search = document.getElementById('rank-search');
+  if (!search) return;
+  var tbody = document.getElementById('rank-body');
+  var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+  var count = document.getElementById('rank-count');
+  var ths = document.querySelectorAll('#rank-table th.sortable');
+  var sortKey = 'position', sortDir = 1;
+
+  function applyFilter() {
+    var q = search.value.toLowerCase(), n = 0;
+    rows.forEach(function (r) {
+      var show = r.getAttribute('data-keyword').indexOf(q) > -1;
+      r.style.display = show ? '' : 'none';
+      if (show) n++;
+    });
+    count.textContent = n + ' of ' + rows.length + ' keywords';
+  }
+
+  function keyVal(r, k) {
+    var v = r.getAttribute('data-' + k);
+    if (k === 'keyword') return v;
+    return v === '' || v === null ? null : parseFloat(v);  // '' = unranked / no comparison
+  }
+
+  function cmp(a, b) {
+    var va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+    if (sortKey !== 'keyword') {          // missing values always sort last
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+    }
+    if (va < vb) return -sortDir;
+    if (va > vb) return sortDir;
+    return 0;
+  }
+
+  function applySort() {
+    rows.sort(cmp);
+    rows.forEach(function (r) { tbody.appendChild(r); });
+    ths.forEach(function (th) {
+      var arr = th.querySelector('.arrow');
+      if (arr) arr.textContent =
+        th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+    });
+  }
+
+  ths.forEach(function (th) {
+    th.addEventListener('click', function () {
+      var k = th.getAttribute('data-sort');
+      if (k === sortKey) { sortDir = -sortDir; }
+      else { sortKey = k; sortDir = k === 'change' ? -1 : 1; }  // biggest movers first
+      applySort();
+    });
+  });
+
+  search.addEventListener('input', applyFilter);
+  applySort();
+  applyFilter();
+})();
+"""
 
 
 def esc(s):
@@ -145,9 +236,16 @@ def rank_section(con):
     rows.sort(key=lambda r: (r[1] is None, r[1] or NOT_FOUND, r[0]))
     out = [f"<h2>Rank Tracker — Google US top 100 "
            f"<span class='sub'>({esc(days[0])}, {len(rows)} keywords)</span></h2>"
-           "<div class='card'><table>"
-           "<tr><th>keyword</th><th>position</th><th>vs prev</th>"
-           "<th>recent trend</th><th>ranking url</th></tr>"]
+           "<div class='card'>"
+           "<div class='table-tools no-print'>"
+           "<input id='rank-search' type='search' placeholder='Search keywords…'>"
+           f"<span id='rank-count' class='sub'>{len(rows)} keywords</span></div>"
+           "<table id='rank-table'><thead><tr>"
+           "<th class='sortable' data-sort='keyword'>keyword <span class='arrow'></span></th>"
+           "<th class='sortable' data-sort='position'>position <span class='arrow'></span></th>"
+           "<th class='sortable' data-sort='change'>vs prev <span class='arrow'></span></th>"
+           "<th>recent trend</th><th>ranking url</th></tr></thead>"
+           "<tbody id='rank-body'>"]
     for keyword, pos, url in rows:
         if len(days) > 1 and keyword in prev:
             d = (prev[keyword] or NOT_FOUND) - (pos or NOT_FOUND)
@@ -157,17 +255,23 @@ def rank_section(con):
                 delta = f"<span class='delta down'>{d}</span>"
             else:
                 delta = "<span class='sub'>·</span>"
+            data_change = str(d)
         else:
             delta = "<span class='sub'>—</span>"
+            data_change = ""
+        data_pos = "" if pos is None else str(pos)
         short_url = url.replace("https://", "").replace("http://", "")[:55]
-        out.append(f"<tr><td>{esc(keyword)}</td>"
+        out.append(f"<tr data-keyword='{esc(keyword.lower())}' "
+                   f"data-position='{data_pos}' data-change='{data_change}'>"
+                   f"<td>{esc(keyword)}</td>"
                    f"<td class='vol'>{fmt_pos(pos)}</td>"
                    f"<td>{delta}</td>"
                    f"<td>{rank_sparkline(con, keyword)}</td>"
                    f"<td class='sub'>{esc(short_url)}</td></tr>")
-    out.append("</table><p class='sub'>First organic position for "
+    out.append("</tbody></table><p class='sub'>First organic position for "
                f"{esc(MY_DOMAIN)} per keyword (US, weekly via DataForSEO). "
-               "Trend bars: taller = better position; — = not in top 100.</p></div>")
+               "Trend bars: taller = better position; — = not in top 100. "
+               "<span class='no-print'>Type to filter; click a column header to sort.</span></p></div>")
     return "".join(out)
 
 
@@ -368,29 +472,89 @@ def latest_llm_section(con):
     return "".join(out)
 
 
+# ---------------------------------------------------------------- page assembly
+def build_panels(con):
+    """[(panel_id, label, html, [(sub_id, sub_label), ...]), ...] — only
+    modules that actually have data."""
+    panels = []
+    ex = exec_summary(con)
+    if ex:
+        panels.append(("exec", "Executive Summary", ex, []))
+    rk = rank_section(con)
+    if rk:
+        panels.append(("rank", "Rank Tracker", rk, []))
+    bl = backlinks_section(con)
+    if bl:
+        panels.append(("backlinks", "Backlinks", bl, []))
+    llm_subs = [(sid, label, section)
+                for sid, label, section in [
+                    ("llm-sov", "Share of voice", sov_trend_section(con)),
+                    ("llm-vol", "AI search volume", volume_section(con)),
+                    ("llm-disc", "Discovered prompts", discovered_section(con)),
+                    ("llm-silent", "Silent citations", silent_section(con)),
+                    ("llm-latest", "Latest run", latest_llm_section(con))]
+                if section]
+    if llm_subs:
+        body = "".join(f"<div id='{sid}'>{section}</div>"
+                       for sid, _, section in llm_subs)
+        panels.append(("llm", "LLM Visibility", body,
+                       [(sid, label) for sid, label, _ in llm_subs]))
+    return panels
+
+
+def sidebar_html(panels, generated):
+    nav = []
+    for i, (pid, label, _, subs) in enumerate(panels):
+        nav.append(f"<a class='nav-item{' active' if i == 0 else ''}' "
+                   f"data-panel='{pid}'>{esc(label)}</a>")
+        for sid, slabel in subs:
+            nav.append(f"<a class='nav-item sub' data-panel='{pid}' "
+                       f"data-target='{sid}'>{esc(slabel)}</a>")
+    return (f"<nav class='sidebar'>"
+            f"<div class='side-brand'>Vantage Circle<span>SEO Suite</span></div>"
+            f"{''.join(nav)}"
+            f"<div class='side-foot'>{len(panels)} modules<br>"
+            f"generated {esc(generated)}</div></nav>")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--open", action="store_true")
     args = ap.parse_args()
     con = sqlite3.connect(DB_PATH)
+    panels = build_panels(con)
+    generated = f"{datetime.now():%Y-%m-%d %H:%M}"
+
+    if panels:
+        panels_html = "".join(
+            f"<section class='panel{' active' if i == 0 else ''}' "
+            f"id='panel-{pid}'>{body}</section>"
+            for i, (pid, _, body, _) in enumerate(panels))
+    else:
+        panels_html = ("<div class='card'>No data yet — run the collectors "
+                       "(rank_track.py, backlinks.py, llm_visibility.py) first.</div>")
+
     page = (f"<!doctype html><html><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
             f"<title>Vantage Circle SEO Suite</title>"
             f"<link rel='preconnect' href='https://fonts.googleapis.com'>"
             f"<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>"
             f"<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap' rel='stylesheet'>"
-            f"<style>{DASHBOARD_CSS}</style></head>"
-            f"<body><div class='wrap'>"
+            f"<style>{DASHBOARD_CSS}</style>"
+            f"<script>document.documentElement.className += ' has-js';</script>"
+            f"</head><body>"
+            f"{sidebar_html(panels, generated)}"
+            f"<div class='content'><div class='wrap'>"
             f"<div class='hero'>"
             f"<div class='eyebrow'>rank tracking · backlinks · AI search analytics</div>"
             f"<h1>Vantage Circle SEO Suite</h1>"
             f"<div class='sub'>domain: {esc(MY_DOMAIN)} · "
             f"platforms: {esc(', '.join(PLATFORMS))} · "
-            f"generated {datetime.now():%Y-%m-%d %H:%M}</div></div>"
-            f"{exec_summary(con)}{rank_section(con)}{backlinks_section(con)}"
-            f"{sov_trend_section(con)}{volume_section(con)}"
-            f"{discovered_section(con)}{silent_section(con)}{latest_llm_section(con)}"
-            f"</div></body></html>")
+            f"generated {generated}</div></div>"
+            f"{panels_html}"
+            f"</div></div>"
+            f"<script>{SCRIPT}</script>"
+            f"</body></html>")
     OUT.write_text(page, encoding="utf-8")
     print(f"Dashboard written to: {OUT}")
     if args.open:
