@@ -16,6 +16,7 @@ Usage:
 import argparse
 import html
 import json
+import os
 import sqlite3
 import webbrowser
 from datetime import datetime
@@ -23,6 +24,11 @@ from pathlib import Path
 
 from common import DASHBOARD_CSS, DB_PATH
 from llm_visibility import BRANDS, MY_DOMAIN, PLATFORMS, PROMPTS_CSV
+
+# Optional Cloudflare Worker endpoint for one-click keyword research.
+# Set at build time: KR_WORKER_URL and KR_WORKER_KEY
+WORKER_URL = os.environ.get("KR_WORKER_URL", "")
+WORKER_KEY = os.environ.get("KR_WORKER_KEY", "")
 from rank_track import PROPERTIES
 
 OUT = Path(__file__).parent / "index.html"  # index.html = clean GitHub Pages URL
@@ -130,6 +136,45 @@ SCRIPT = """
     applySort();
     applyFilter();
   });
+
+  // ---- keyword research: one-click search via Cloudflare Worker ----
+  (function () {
+    var form = document.querySelector('.research-form[data-worker-url]');
+    if (!form) return;
+    var btn = form.querySelector('.research-search-btn');
+    var ta = form.querySelector('.research-seed-input');
+    var status = form.parentNode.querySelector('.research-status');
+    if (!btn || !ta) return;
+    btn.addEventListener('click', function () {
+      var seed = ta.value.trim();
+      if (!seed) {
+        if (status) { status.textContent = 'Please enter a seed keyword.'; status.className = 'research-status sub err'; }
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Searching…';
+      if (status) { status.textContent = 'Sending request…'; status.className = 'research-status sub'; }
+      fetch(form.getAttribute('data-worker-url'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Research-Key': form.getAttribute('data-worker-key')
+        },
+        body: JSON.stringify({ seed: seed, limit: '100' })
+      }).then(function (r) {
+        return r.json().then(function (data) {
+          if (!r.ok || !data.ok) throw new Error(data.error || 'Request failed');
+          if (status) { status.textContent = 'Research started. Results appear in ~1 minute. Refresh the dashboard.'; status.className = 'research-status sub ok'; }
+          ta.value = '';
+        });
+      }).catch(function (e) {
+        if (status) { status.textContent = 'Error: ' + e.message; status.className = 'research-status sub err'; }
+      }).finally(function () {
+        btn.disabled = false;
+        btn.textContent = 'Search';
+      });
+    });
+  })();
 
   // ---- keyword research: seed / search / volume / KD filters ----
   (function () {
@@ -715,6 +760,20 @@ def research_section(con):
 def _research_empty_card():
     workflow_url = ("https://github.com/Milton-Talukdar/seo_tools/actions/workflows/"
                     "keyword-research.yml")
+    if WORKER_URL and WORKER_KEY:
+        return (f"<div class='card research-empty'>"
+                f"<h3>Keywords Explorer</h3>"
+                f"<p class='sub'>Get keyword ideas with Search Volume, Keyword Difficulty, "
+                f"CPC and SERP features. Type a seed keyword and click Search.</p>"
+                f"<div class='research-form no-print' data-worker-url='{esc(WORKER_URL)}' "
+                f"data-worker-key='{esc(WORKER_KEY)}'>"
+                f"<textarea class='research-seed-input' placeholder='Enter keywords separated by commas or new lines'>"
+                f"</textarea>"
+                f"<div class='research-form-foot'>"
+                f"<span>🌎 United States</span>"
+                f"<button type='button' class='research-search-btn'>Search</button></div></div>"
+                f"<p class='research-status sub'></p>"
+                f"</div>")
     return (f"<div class='card research-empty'>"
             f"<h3>Keywords Explorer</h3>"
             f"<p class='sub'>Get keyword ideas with Search Volume, Keyword Difficulty, "
