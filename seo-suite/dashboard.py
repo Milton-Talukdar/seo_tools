@@ -718,17 +718,16 @@ def _research_empty_card():
     return (f"<div class='card research-empty'>"
             f"<h3>Keywords Explorer</h3>"
             f"<p class='sub'>Get keyword ideas with Search Volume, Keyword Difficulty, "
-            f"CPC and SERP features. Add a seed keyword to run research.</p>"
+            f"CPC and SERP features. Add seed keywords below, then run research on GitHub.</p>"
             f"<div class='research-form no-print'>"
-            f"<textarea readonly placeholder='Enter keywords separated by commas or new lines'>"
+            f"<textarea class='research-seed-input' placeholder='Enter keywords separated by commas or new lines'>"
             f"</textarea>"
             f"<div class='research-form-foot'>"
             f"<span>🌎 United States</span>"
             f"<a class='research-btn' href='{esc(workflow_url)}' target='_blank'>"
-            f"Open Keyword Research</a></div></div>"
-            f"<p class='sub'>Runs securely via GitHub Actions using repository secrets "
-            f"(no API credentials exposed). Or run locally:<br>"
-            f"<code>python3 keyword_research.py \"workplace stress\"</code></p>"
+            f"Run on GitHub Actions →</a></div></div>"
+            f"<p class='sub'>The workflow uses repository secrets, so API credentials are never exposed. "
+            f"Copy the keywords above and paste them into the <b>seed</b> field.</p>"
             f"</div>")
 
 
