@@ -223,12 +223,9 @@ code { background: #eef1f6; padding: 1px 6px; border-radius: 6px; font-size: 12p
 th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 th.sortable:hover { color: var(--accent); }
 th.sortable .arrow { font-size: 9px; color: var(--accent); }
-/* ---- rank tracker v2: property sub-tabs + ahrefs-style cells ---- */
-.rank-tabs { display: flex; gap: 6px; margin: 6px 0 0; }
-.rank-tab { padding: 7px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600;
-            color: #475569; background: #eef1f6; cursor: pointer; user-select: none; }
-.rank-tab:hover { background: #e2e8f0; }
-.rank-tab.active { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; }
+.nav-group { padding: 12px 10px 3px; font-size: 10.5px; font-weight: 700;
+             letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+/* ---- rank tracker v2: one page per property + ahrefs-style cells ---- */
 .has-js .rank-prop { display: none; }
 .has-js .rank-prop.active { display: block; }
 .table-tools select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px;
@@ -257,7 +254,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   body { background: #fff; }
   .hero { background: #fff; color: #000; box-shadow: none; border: 1px solid #ccc; }
   .hero .sub, .eyebrow { color: #444; }
-  details, .no-print, .sidebar, .table-tools, .rank-tabs { display: none; }
+  details, .no-print, .sidebar, .table-tools { display: none; }
   .content { margin-left: 0; }
   .has-js .panel, .has-js .rank-prop { display: block !important; }
   .card, .kpi { break-inside: avoid; box-shadow: none; }

@@ -3,9 +3,11 @@
 dashboard.py — generate a self-contained HTML dashboard from seo_suite.db.
 
 One page with a left sidebar tool-switcher: Executive Summary, Rank Tracker
-(searchable/sortable), Backlinks, and LLM Visibility (share-of-voice trend,
-volumes, discovered prompts, silent citations, latest run). Every panel hides
-cleanly when its table is missing or empty.
+(one page per property — Vantage Circle, Vantage Fit — grouped under a
+"Rank Tracker" sidebar heading, each searchable/sortable), Backlinks, and
+LLM Visibility (share-of-voice trend, volumes, discovered prompts, silent
+citations, latest run). Every panel hides cleanly when its table is missing
+or empty.
 
 Usage:
     python3 dashboard.py           # writes index.html and prints its path
@@ -27,8 +29,8 @@ OUT = Path(__file__).parent / "index.html"  # index.html = clean GitHub Pages UR
 YOU = BRANDS[0]  # first brand in the list = your brand
 NOT_FOUND = 101  # rank sentinel: deeper than the tracked top 100
 
-# vanilla JS: sidebar panel switching + rank sub-tabs + per-table
-# live search / tag filter / column sorting.
+# vanilla JS: sidebar panel switching (incl. grouped project pages) +
+# per-table live search / tag filter / column sorting.
 # (plain string, not an f-string — the braces are literal JS/CSS)
 SCRIPT = """
 (function () {
@@ -49,25 +51,9 @@ SCRIPT = """
       }
       var t = it.getAttribute('data-target');
       if (t) {
-        var rt = document.querySelector(".rank-tab[data-prop='" + t + "']");
-        if (rt) rt.click();   // sidebar sub-item also activates the rank sub-tab
         var te = document.getElementById(t);
         if (te) te.scrollIntoView({ behavior: 'smooth' });
       }
-    });
-  });
-
-  // ---- rank tracker: property sub-tabs ----
-  var tabs = document.querySelectorAll('.rank-tab');
-  tabs.forEach(function (t) {
-    t.addEventListener('click', function () {
-      tabs.forEach(function (x) { x.classList.remove('active'); });
-      t.classList.add('active');
-      document.querySelectorAll('.rank-prop').forEach(function (el) {
-        el.classList.remove('active');
-      });
-      var el = document.getElementById(t.getAttribute('data-prop'));
-      if (el) el.classList.add('active');
     });
   });
 
@@ -173,32 +159,44 @@ def table_days(con, table, limit=2):
 def exec_summary(con):
     cards = []
 
-    # rank KPIs
-    rdays = table_days(con, "rank_snapshots")
-    if rdays:
-        rows = con.execute(
-            "SELECT keyword, position FROM rank_snapshots WHERE day=?",
-            (rdays[0],)).fetchall()
+    # rank KPIs — aggregate each property's latest full-coverage day
+    rprops = [(p, prop_days(con, p)) for p in PROPERTIES]
+    rprops = [(p, days) for p, days in rprops if days]
+    if rprops:
+        rows, prev = [], {}
+        latest_day, prev_day = "", ""
+        for p, days in rprops:
+            rows += con.execute(
+                "SELECT keyword, position FROM rank_snapshots "
+                "WHERE day=? AND property=?", (days[0], p)).fetchall()
+            latest_day = max(latest_day, days[0])
+            if len(days) > 1:
+                for k, pos in con.execute(
+                        "SELECT keyword, position FROM rank_snapshots "
+                        "WHERE day=? AND property=?", (days[1], p)):
+                    prev[(p, k)] = pos
+                prev_day = max(prev_day, days[1])
         ranked = [p for _, p in rows if p is not None]
         cards.append((
             f"{sum(p <= 3 for p in ranked)}",
             f"keywords in Google top 3<br>{sum(p <= 10 for p in ranked)} in top 10 "
             f"· {sum(p <= 50 for p in ranked)} in top 50<br>"
-            f"<span class='sub'>{len(ranked)}/{len(rows)} ranked ({esc(rdays[0])})</span>"))
-        if len(rdays) > 1:
-            prev = dict(con.execute(
-                "SELECT keyword, position FROM rank_snapshots WHERE day=?",
-                (rdays[1],)).fetchall())
+            f"<span class='sub'>{len(ranked)}/{len(rows)} ranked ({esc(latest_day)})</span>"))
+        if prev:
             movers = sorted(
-                (((prev.get(k) or NOT_FOUND) - (p or NOT_FOUND), k)
-                 for k, p in rows if (prev.get(k) or NOT_FOUND) != (p or NOT_FOUND)),
+                (((prev.get((p, k)) or NOT_FOUND) - (pos or NOT_FOUND), k)
+                 for p, days in rprops
+                 for k, pos in con.execute(
+                     "SELECT keyword, position FROM rank_snapshots "
+                     "WHERE day=? AND property=?", (days[0], p)).fetchall()
+                 if (prev.get((p, k)) or NOT_FOUND) != (pos or NOT_FOUND)),
                 key=lambda m: -m[0])
             if movers:
                 d, k = movers[0]
                 cls, arrow = ("up", "▲") if d > 0 else ("down", "▼")
                 cards.append((
                     f"<span class='delta {cls}'>{arrow}{abs(d)}</span>",
-                    f"biggest rank move vs {esc(rdays[1])}<br>{esc(k[:60])}"))
+                    f"biggest rank move vs {esc(prev_day)}<br>{esc(k[:60])}"))
 
     # backlink KPI
     bdays = table_days(con, "backlink_snapshots")
@@ -321,16 +319,16 @@ def features_cell(meta):
     return f"<td>{shown}{more}</td>"
 
 
-def rank_property_block(con, prop, active):
+def rank_property_block(con, prop):
     cfg = PROPERTIES[prop]
     days = prop_days(con, prop)
     if not days:
-        return "", None
+        return ""
     rows = con.execute(
         "SELECT keyword, position, url FROM rank_snapshots "
         "WHERE day=? AND property=?", (days[0], prop)).fetchall()
     if not rows:
-        return "", None
+        return ""
     prev = {}
     if len(days) > 1:
         prev = dict(con.execute(
@@ -347,7 +345,7 @@ def rank_property_block(con, prop, active):
     rows.sort(key=lambda r: (r[1] is None, r[1] or NOT_FOUND, r[0]))
     tags = sorted({m["tag"] for m in meta.values() if m["tag"]})
 
-    out = [f"<div class='rank-prop{' active' if active else ''}' id='rank-{prop}'>"
+    out = [f"<div class='rank-prop active' id='rank-{prop}'>"
            f"<div class='card'>"
            f"<div class='table-tools no-print'>"
            f"<input class='rank-search' type='search' placeholder='Search keywords or tags…'>"
@@ -404,30 +402,20 @@ def rank_property_block(con, prop, active):
                "— = unranked or no data. "
                "<span class='no-print'>Type to filter, pick a tag, click a column header to sort.</span></p>"
                "</div></div>")
-    return "".join(out), {"id": f"rank-{prop}", "label": cfg["label"]}
+    return "".join(out)
 
 
-def rank_section(con):
-    """Returns (html, [(sub_id, sub_label), ...]) — sub-tabs per property."""
-    blocks, subs = [], []
-    any_days = [p for p in PROPERTIES if prop_days(con, p)]
-    for prop in PROPERTIES:
-        block, sub = rank_property_block(con, prop, active=(prop == any_days[0] if any_days else False))
-        if block:
-            blocks.append(block)
-            subs.append(sub)
-    if not blocks:
-        return "", []
-    tabs = ""
-    if len(blocks) > 1:
-        tabs = ("<div class='rank-tabs no-print'>" + "".join(
-            f"<span class='rank-tab{' active' if i == 0 else ''}' "
-            f"data-prop='{s['id']}'>{esc(s['label'])}</span>"
-            for i, s in enumerate(subs)) + "</div>")
-    latest = max(prop_days(con, p)[0] for p in any_days)
-    head = (f"<h2>Rank Tracker — Google US top 100 "
-            f"<span class='sub'>({esc(latest)})</span></h2>")
-    return head + tabs + "".join(blocks), [(s["id"], s["label"]) for s in subs]
+def rank_property_page(con, prop):
+    """Full rank-tracker page body for one property; '' when it has no data."""
+    cfg = PROPERTIES[prop]
+    days = prop_days(con, prop)
+    if not days:
+        return ""
+    block = rank_property_block(con, prop)
+    if not block:
+        return ""
+    return (f"<h2>Rank Tracker — {esc(cfg['label'])} · Google US top 100 "
+            f"<span class='sub'>({esc(days[0])})</span></h2>" + block)
 
 
 # ---------------------------------------------------------------- backlinks
@@ -629,18 +617,21 @@ def latest_llm_section(con):
 
 # ---------------------------------------------------------------- page assembly
 def build_panels(con):
-    """[(panel_id, label, html, [(sub_id, sub_label), ...]), ...] — only
-    modules that actually have data."""
+    """[(panel_id, label, html, [(sub_id, sub_label), ...], group), ...] — only
+    modules that actually have data. Panels sharing a group name are bundled
+    under one sidebar heading, each as its own page."""
     panels = []
     ex = exec_summary(con)
     if ex:
-        panels.append(("exec", "Executive Summary", ex, []))
-    rk = rank_section(con)
-    if rk:
-        panels.append(("rank", "Rank Tracker", rk, []))
+        panels.append(("exec", "Executive Summary", ex, [], None))
+    for prop in PROPERTIES:                     # one page per project
+        page = rank_property_page(con, prop)
+        if page:
+            panels.append((f"rank-{prop}", PROPERTIES[prop]["label"],
+                           page, [], "Rank Tracker"))
     bl = backlinks_section(con)
     if bl:
-        panels.append(("backlinks", "Backlinks", bl, []))
+        panels.append(("backlinks", "Backlinks", bl, [], None))
     llm_subs = [(sid, label, section)
                 for sid, label, section in [
                     ("llm-sov", "Share of voice", sov_trend_section(con)),
@@ -653,15 +644,20 @@ def build_panels(con):
         body = "".join(f"<div id='{sid}'>{section}</div>"
                        for sid, _, section in llm_subs)
         panels.append(("llm", "LLM Visibility", body,
-                       [(sid, label) for sid, label, _ in llm_subs]))
+                       [(sid, label) for sid, label, _ in llm_subs], None))
     return panels
 
 
 def sidebar_html(panels, generated):
-    nav = []
-    for i, (pid, label, _, subs) in enumerate(panels):
-        nav.append(f"<a class='nav-item{' active' if i == 0 else ''}' "
-                   f"data-panel='{pid}'>{esc(label)}</a>")
+    nav, last_group, first = [], None, True
+    for pid, label, _, subs, group in panels:
+        if group != last_group:
+            if group:
+                nav.append(f"<div class='nav-group'>{esc(group)}</div>")
+            last_group = group
+        cls = "nav-item" + (" sub" if group else "") + (" active" if first else "")
+        nav.append(f"<a class='{cls}' data-panel='{pid}'>{esc(label)}</a>")
+        first = False
         for sid, slabel in subs:
             nav.append(f"<a class='nav-item sub' data-panel='{pid}' "
                        f"data-target='{sid}'>{esc(slabel)}</a>")
@@ -684,7 +680,7 @@ def main():
         panels_html = "".join(
             f"<section class='panel{' active' if i == 0 else ''}' "
             f"id='panel-{pid}'>{body}</section>"
-            for i, (pid, _, body, _) in enumerate(panels))
+            for i, (pid, _, body, _, _) in enumerate(panels))
     else:
         panels_html = ("<div class='card'>No data yet — run the collectors "
                        "(rank_track.py, backlinks.py, llm_visibility.py) first.</div>")
