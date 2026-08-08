@@ -713,17 +713,22 @@ def research_section(con):
 
 
 def _research_empty_card():
+    workflow_url = ("https://github.com/Milton-Talukdar/seo_tools/actions/workflows/"
+                    "keyword-research.yml")
     return (f"<div class='card research-empty'>"
             f"<h3>Keywords Explorer</h3>"
             f"<p class='sub'>Get keyword ideas with Search Volume, Keyword Difficulty, "
-            f"CPC and SERP features. Run this from the command line:</p>"
+            f"CPC and SERP features. Add a seed keyword to run research.</p>"
             f"<div class='research-form no-print'>"
             f"<textarea readonly placeholder='Enter keywords separated by commas or new lines'>"
             f"</textarea>"
             f"<div class='research-form-foot'>"
             f"<span>🌎 United States</span>"
-            f"<button type='button' disabled>Search</button></div></div>"
-            f"<code>python3 keyword_research.py \"workplace stress\"</code>"
+            f"<a class='research-btn' href='{esc(workflow_url)}' target='_blank'>"
+            f"Open Keyword Research</a></div></div>"
+            f"<p class='sub'>Runs securely via GitHub Actions using repository secrets "
+            f"(no API credentials exposed). Or run locally:<br>"
+            f"<code>python3 keyword_research.py \"workplace stress\"</code></p>"
             f"</div>")
 
 

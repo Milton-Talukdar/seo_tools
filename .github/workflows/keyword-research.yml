@@ -1,0 +1,58 @@
+name: Keyword Research
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Seed keyword(s) — separate multiple seeds with commas or new lines"
+        required: true
+        type: string
+      limit:
+        description: "Max keyword ideas per seed (default 100)"
+        required: false
+        default: "100"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: seo-suite
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Run keyword research
+        env:
+          DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
+          DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
+        run: |
+          # split comma or newline separated seeds
+          python3 - <<'PY'
+          import os, subprocess, re
+          seeds = [s.strip() for s in re.split(r'[,\n]+', os.environ['SEEDS']) if s.strip()]
+          limit = os.environ['LIMIT']
+          for seed in seeds:
+              subprocess.run(['python3', 'keyword_research.py', seed, '--limit', limit], check=True)
+          PY
+        env:
+          SEEDS: ${{ github.event.inputs.seed }}
+          LIMIT: ${{ github.event.inputs.limit }}
+
+      - name: Rebuild dashboard
+        run: python3 dashboard.py
+
+      - name: Commit updated dashboard + DB
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add seo_suite.db index.html
+          git diff --cached --quiet || git commit -m "Keyword research: ${{ github.event.inputs.seed }}"
+          git push

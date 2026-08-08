@@ -238,6 +238,9 @@ th.sortable .arrow { font-size: 9px; color: var(--accent); }
 .research-form-foot button { padding: 8px 22px; border: none; border-radius: 8px;
   background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff;
   font-weight: 700; cursor: not-allowed; opacity: .6; }
+a.research-btn { padding: 8px 22px; border-radius: 8px; text-decoration: none;
+  background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff;
+  font-weight: 700; font-size: 13px; }
 .research-tools input { max-width: 110px; }
 /* ---- rank tracker v2: one page per property + ahrefs-style cells ---- */
 .has-js .rank-prop { display: none; }
