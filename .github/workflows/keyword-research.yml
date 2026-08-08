@@ -33,6 +33,8 @@ jobs:
         env:
           DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
           DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
+          SEEDS: ${{ github.event.inputs.seed }}
+          LIMIT: ${{ github.event.inputs.limit }}
         run: |
           # split comma or newline separated seeds
           python3 - <<'PY'
@@ -42,9 +44,6 @@ jobs:
           for seed in seeds:
               subprocess.run(['python3', 'keyword_research.py', seed, '--limit', limit], check=True)
           PY
-        env:
-          SEEDS: ${{ github.event.inputs.seed }}
-          LIMIT: ${{ github.event.inputs.limit }}
 
       - name: Rebuild dashboard
         run: python3 dashboard.py
