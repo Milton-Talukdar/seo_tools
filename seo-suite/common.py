@@ -100,6 +100,11 @@ def init_db():
     CREATE TABLE IF NOT EXISTS silent(
         day TEXT, query TEXT, platform TEXT, ai_search_volume INTEGER,
         PRIMARY KEY(day, query, platform));
+    CREATE TABLE IF NOT EXISTS keyword_research(
+        seed TEXT, source TEXT, keyword TEXT, volume INTEGER, kd REAL,
+        cpc REAL, competition REAL, intent TEXT, serp_features TEXT,
+        parent_topic TEXT, fetched TEXT,
+        PRIMARY KEY(seed, source, keyword));
     """)
     # v2 migration: rank_snapshots gained a `property` column
     cols = [r[1] for r in con.execute("PRAGMA table_info(rank_snapshots)")]
@@ -215,7 +220,7 @@ code { background: #eef1f6; padding: 1px 6px; border-radius: 6px; font-size: 12p
 .has-js .panel { display: none; }
 .has-js .panel.active { display: block; }
 /* ---- rank table search/sort ---- */
-.table-tools { display: flex; align-items: center; gap: 12px; margin: 6px 0 4px; }
+.table-tools { display: flex; align-items: center; gap: 12px; margin: 6px 0 4px; flex-wrap: wrap; }
 .table-tools input { flex: 1; max-width: 320px; padding: 8px 12px; border: 1px solid var(--line);
                      border-radius: 9px; font-size: 13px; font-family: inherit;
                      background: #f8fafc; color: var(--ink); }
@@ -225,6 +230,15 @@ th.sortable:hover { color: var(--accent); }
 th.sortable .arrow { font-size: 9px; color: var(--accent); }
 .nav-group { padding: 12px 10px 3px; font-size: 10.5px; font-weight: 700;
              letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.research-empty h3 { margin: 0 0 8px; font-size: 18px; }
+.research-empty code { display: block; margin-top: 14px; }
+.research-form textarea { width: 100%; min-height: 120px; padding: 12px; border: 1px solid var(--line);
+  border-radius: 12px; font-family: inherit; font-size: 14px; resize: vertical; background: #f8fafc; }
+.research-form-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+.research-form-foot button { padding: 8px 22px; border: none; border-radius: 8px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff;
+  font-weight: 700; cursor: not-allowed; opacity: .6; }
+.research-tools input { max-width: 110px; }
 /* ---- rank tracker v2: one page per property + ahrefs-style cells ---- */
 .has-js .rank-prop { display: none; }
 .has-js .rank-prop.active { display: block; }

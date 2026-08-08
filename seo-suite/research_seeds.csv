@@ -1,0 +1,3 @@
+# Keyword research seeds — one seed keyword per line.
+# Run: python3 keyword_research.py "<seed>"
+# Fetched results appear in the dashboard under Keyword Research.

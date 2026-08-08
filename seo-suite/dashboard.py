@@ -130,6 +130,46 @@ SCRIPT = """
     applySort();
     applyFilter();
   });
+
+  // ---- keyword research: seed / search / volume / KD filters ----
+  (function () {
+    var wrap = document.querySelector('.research-wrap');
+    if (!wrap) return;
+    var seed = wrap.querySelector('.research-seed');
+    var search = wrap.querySelector('.research-search');
+    var volMin = wrap.querySelector('.research-vol-min');
+    var volMax = wrap.querySelector('.research-vol-max');
+    var kdMin = wrap.querySelector('.research-kd-min');
+    var kdMax = wrap.querySelector('.research-kd-max');
+    var rows = Array.prototype.slice.call(wrap.querySelectorAll('tbody tr'));
+    var count = wrap.querySelector('.research-count');
+    function num(v) { return v === '' || v == null ? NaN : parseFloat(v); }
+    function apply() {
+      var s = seed ? seed.value : '';
+      var q = search ? search.value.toLowerCase() : '';
+      var vmin = num(volMin ? volMin.value : ''), vmax = num(volMax ? volMax.value : '');
+      var kmin = num(kdMin ? kdMin.value : ''), kmax = num(kdMax ? kdMax.value : '');
+      var n = 0;
+      rows.forEach(function (r) {
+        var ok = true;
+        if (s && r.getAttribute('data-seed') !== s) ok = false;
+        if (ok && q && r.getAttribute('data-keyword').indexOf(q) === -1) ok = false;
+        var v = parseFloat(r.getAttribute('data-volume'));
+        if (ok && !isNaN(vmin) && v < vmin) ok = false;
+        if (ok && !isNaN(vmax) && v > vmax) ok = false;
+        var k = parseFloat(r.getAttribute('data-kd'));
+        if (ok && !isNaN(kmin) && k < kmin) ok = false;
+        if (ok && !isNaN(kmax) && k > kmax) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' keywords';
+    }
+    [seed, search, volMin, volMax, kdMin, kdMax].forEach(function (el) {
+      if (el) el.addEventListener('input', apply);
+    });
+    apply();
+  })();
 })();
 """
 
@@ -615,6 +655,78 @@ def latest_llm_section(con):
     return "".join(out)
 
 
+def research_section(con):
+    """Keyword Research panel: empty-state search card + stored results table."""
+    rows = con.execute(
+        "SELECT seed, keyword, volume, kd, cpc, competition, intent, "
+        "serp_features, fetched FROM keyword_research "
+        "ORDER BY seed, volume DESC NULLS LAST, keyword").fetchall()
+    if not rows:
+        # still show the empty-state card so users know how to populate it
+        return _research_empty_card()
+
+    seeds = sorted({r[0] for r in rows})
+    seed_options = "".join(f"<option value='{esc(s)}'>{esc(s)}</option>" for s in seeds)
+
+    body = [f"<h2>Keyword Research</h2>{_research_empty_card()}"
+            f"<div class='card research-wrap'>"
+            f"<div class='table-tools no-print research-tools'>"
+            f"<select class='research-seed'><option value=''>All seeds</option>"
+            f"{seed_options}</select>"
+            f"<input class='research-search' type='search' placeholder='Search keywords…'>"
+            f"<input class='research-vol-min' type='number' placeholder='Min vol' min='0'>"
+            f"<input class='research-vol-max' type='number' placeholder='Max vol' min='0'>"
+            f"<input class='research-kd-min' type='number' placeholder='Min KD' min='0' max='100'>"
+            f"<input class='research-kd-max' type='number' placeholder='Max KD' min='0' max='100'>"
+            f"<span class='research-count sub'>{len(rows)} keywords</span></div>"
+            f"<table class='research-table'><thead><tr>"
+            f"<th>Keyword</th><th>Seed</th><th>Volume</th><th>KD</th>"
+            f"<th>CPC</th><th>Competition</th><th>Intent</th><th>SERP features</th>"
+            f"</tr></thead><tbody>"]
+    for seed, keyword, vol, kd, cpc, comp, intent, feats, fetched in rows:
+        feats_list = []
+        try:
+            feats_list = json.loads(feats or "[]") or []
+        except (TypeError, ValueError):
+            pass
+        feat_html = "".join(f"<span class='feat-chip'>{esc(f)}</span>" for f in feats_list[:4])
+        if len(feats_list) > 4:
+            feat_html += f"<span class='sub'>+{len(feats_list) - 4}</span>"
+        intent_html = (f"<span class='feat-chip'>{esc(intent)}</span>" if intent else "")
+        vol_v = vol if vol is not None else ""
+        kd_v = kd if kd is not None else ""
+        body.append(
+            f"<tr data-keyword='{esc(keyword.lower())}' "
+            f"data-seed='{esc(seed)}' "
+            f"data-volume='{vol_v}' data-kd='{kd_v}'>"
+            f"<td>{esc(keyword)}</td>"
+            f"<td class='tag-cell'>{esc(seed)}</td>"
+            f"<td class='num'>{f'{vol:,}' if vol is not None else '<span class=sub>—</span>'}</td>"
+            f"<td class='num'>{f'{kd:.0f}' if kd is not None else '<span class=sub>—</span>'}</td>"
+            f"<td class='num'>{f'${cpc:.2f}' if cpc is not None else '<span class=sub>—</span>'}</td>"
+            f"<td class='num'>{f'{comp:.2f}' if comp is not None else '<span class=sub>—</span>'}</td>"
+            f"<td>{intent_html or '<span class=sub>—</span>'}</td>"
+            f"<td>{feat_html or '<span class=sub>—</span>'}</td>"
+            f"</tr>")
+    body.append("</tbody></table></div>")
+    return "".join(body)
+
+
+def _research_empty_card():
+    return (f"<div class='card research-empty'>"
+            f"<h3>Keywords Explorer</h3>"
+            f"<p class='sub'>Get keyword ideas with Search Volume, Keyword Difficulty, "
+            f"CPC and SERP features. Run this from the command line:</p>"
+            f"<div class='research-form no-print'>"
+            f"<textarea readonly placeholder='Enter keywords separated by commas or new lines'>"
+            f"</textarea>"
+            f"<div class='research-form-foot'>"
+            f"<span>🌎 United States</span>"
+            f"<button type='button' disabled>Search</button></div></div>"
+            f"<code>python3 keyword_research.py \"workplace stress\"</code>"
+            f"</div>")
+
+
 # ---------------------------------------------------------------- page assembly
 def build_panels(con):
     """[(panel_id, label, html, [(sub_id, sub_label), ...], group), ...] — only
@@ -632,6 +744,9 @@ def build_panels(con):
     bl = backlinks_section(con)
     if bl:
         panels.append(("backlinks", "Backlinks", bl, [], None))
+    rs = research_section(con)
+    if rs:
+        panels.append(("research", "Keyword Research", rs, [], None))
     llm_subs = [(sid, label, section)
                 for sid, label, section in [
                     ("llm-sov", "Share of voice", sov_trend_section(con)),
