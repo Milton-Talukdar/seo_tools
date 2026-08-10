@@ -700,20 +700,60 @@ def latest_llm_section(con):
     return "".join(out)
 
 
+def seed_overview_section(con):
+    """Ahrefs-style seed keyword overview cards above the ideas table."""
+    try:
+        rows = con.execute(
+            "SELECT seed, volume, kd, cpc, competition, intent, "
+            "serp_features, fetched FROM seed_overview "
+            "ORDER BY seed").fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    if not rows:
+        return ""
+    cards = []
+    for seed, vol, kd, cpc, comp, intent, feats, fetched in rows:
+        intent_html = (f"<span class='feat-chip'>{esc(intent)}</span>" if intent else "")
+        cards.append(
+            f"<div class='seed-card card'>"
+            f"<div class='seed-head'>"
+            f"<div class='seed-keyword'>{esc(seed)}</div>"
+            f"<div class='seed-meta'>overview · {esc(fetched or '')}</div></div>"
+            f"<div class='seed-kpis'>"
+            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"{f'{vol:,}' if vol is not None else '—'}</div>"
+            f"<div class='seed-label'>Volume</div></div>"
+            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"{f'{kd:.0f}' if kd is not None else '—'}</div>"
+            f"<div class='seed-label'>KD</div></div>"
+            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"{f'${cpc:.2f}' if cpc is not None else '—'}</div>"
+            f"<div class='seed-label'>CPC</div></div>"
+            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"{f'{comp:.2f}' if comp is not None else '—'}</div>"
+            f"<div class='seed-label'>Competition</div></div>"
+            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"{intent_html or '—'}</div>"
+            f"<div class='seed-label'>Intent</div></div>"
+            f"</div></div>")
+    return f"<h2>Seed overview</h2><div class='seed-grid'>{''.join(cards)}</div>"
+
+
 def research_section(con):
-    """Keyword Research panel: empty-state search card + stored results table."""
+    """Keyword Research panel: seed overview + empty-state card + ideas table."""
     rows = con.execute(
         "SELECT seed, keyword, volume, kd, cpc, competition, intent, "
         "serp_features, fetched FROM keyword_research "
         "ORDER BY seed, volume DESC NULLS LAST, keyword").fetchall()
+    overview = seed_overview_section(con)
     if not rows:
         # still show the empty-state card so users know how to populate it
-        return _research_empty_card()
+        return overview + _research_empty_card()
 
     seeds = sorted({r[0] for r in rows})
     seed_options = "".join(f"<option value='{esc(s)}'>{esc(s)}</option>" for s in seeds)
 
-    body = [f"<h2>Keyword Research</h2>{_research_empty_card()}"
+    body = [f"<h2>Keyword Research</h2>{overview}{_research_empty_card()}"
             f"<div class='card research-wrap'>"
             f"<div class='table-tools no-print research-tools'>"
             f"<select class='research-seed'><option value=''>All seeds</option>"

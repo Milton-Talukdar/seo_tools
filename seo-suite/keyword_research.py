@@ -85,6 +85,19 @@ def save(con, seed, rows):
              r["competition"], r["intent"] or None, r["serp_features"],
              r["parent_topic"], today))
         n += 1
+
+    # Save the seed's own overview (use the seed's row from ideas if present)
+    seed_row = next((r for r in rows if r["keyword"].lower() == seed.lower()), None)
+    if seed_row is None:
+        seed_row = {"keyword": seed, "volume": None, "kd": None, "cpc": None,
+                    "competition": None, "intent": None, "serp_features": None}
+    con.execute(
+        "INSERT OR REPLACE INTO seed_overview "
+        "(seed, volume, kd, cpc, competition, intent, serp_features, fetched) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (seed, seed_row["volume"], seed_row["kd"], seed_row["cpc"],
+         seed_row["competition"], seed_row["intent"] or None,
+         seed_row["serp_features"], today))
     con.commit()
     return n
 
