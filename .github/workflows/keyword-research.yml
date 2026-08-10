@@ -46,6 +46,9 @@ jobs:
           PY
 
       - name: Rebuild dashboard
+        env:
+          KR_WORKER_URL: ${{ vars.KR_WORKER_URL }}
+          KR_WORKER_KEY: ${{ vars.KR_WORKER_KEY }}
         run: python3 dashboard.py
 
       - name: Commit updated dashboard + DB

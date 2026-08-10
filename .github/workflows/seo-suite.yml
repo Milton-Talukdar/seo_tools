@@ -57,6 +57,9 @@ jobs:
         run: python3 enrich.py   # self-throttled: runs at most once per 25 days
 
       - name: Build dashboard
+        env:
+          KR_WORKER_URL: ${{ vars.KR_WORKER_URL }}
+          KR_WORKER_KEY: ${{ vars.KR_WORKER_KEY }}
         run: python3 dashboard.py
 
       - name: Commit updated data + dashboard
