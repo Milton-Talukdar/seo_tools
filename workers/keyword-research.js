@@ -66,8 +66,13 @@ export default {
     const owner = env.GITHUB_OWNER;
     const repo = env.GITHUB_REPO;
     const token = env.GITHUB_TOKEN;
-    if (!owner || !repo || !token) {
-      return json({ ok: false, error: "Worker not configured" }, 500, cors);
+    const missing = [
+      !owner && "GITHUB_OWNER",
+      !repo && "GITHUB_REPO",
+      !token && "GITHUB_TOKEN",
+    ].filter(Boolean);
+    if (missing.length) {
+      return json({ ok: false, error: `Worker not configured: ${missing.join(", ")}` }, 500, cors);
     }
 
     const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
