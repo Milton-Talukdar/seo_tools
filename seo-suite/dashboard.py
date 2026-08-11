@@ -251,6 +251,293 @@ SCRIPT = """
       });
     });
   })();
+
+  // ---- competitor tracker tabs / filters / export ----
+  (function () {
+    function fmtDate(iso) {
+      var d = new Date(iso);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    function daysAgo(n) {
+      var d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - n); return d;
+    }
+    function inRange(ts, days) {
+      if (days === 0) return true;
+      return new Date(ts) >= daysAgo(days);
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+    }
+    function sectionOf(url) {
+      try {
+        var locale = { 'en': 1, 'fr': 1, 'es': 1, 'de': 1, 'it': 1, 'pt': 1, 'ja': 1, 'ko': 1, 'zh': 1, 'en-us': 1, 'en-gb': 1, 'en-au': 1, 'en-in': 1, 'en-ca': 1, 'fr-ca': 1 };
+        var p = new URL(url).pathname.replace(/^\/+/, '').split('/').filter(Boolean);
+        if (p.length > 1 && locale[p[0]]) p.shift();
+        return p[0] || 'home';
+      } catch (e) { return 'other'; }
+    }
+    function typeLabel(t, n) {
+      var map = {
+        new_page: ['new page', 'new pages'],
+        content_update: ['content update', 'content updates'],
+        page_removed: ['page removed', 'pages removed'],
+        redirect: ['redirect', 'redirects'],
+        title_change: ['title change', 'title changes'],
+        meta_change: ['meta change', 'meta changes'],
+        h1_change: ['H1 change', 'H1 changes'],
+        schema_change: ['schema change', 'schema changes'],
+        url_case_change: ['URL case change', 'URL case changes']
+      };
+      var pair = map[t] || [t, t + 's'];
+      return pair[n === 1 ? 0 : 1];
+    }
+    function renderCompetitorCharts(box, changes, competitors, selfDomain) {
+      var np = changes.filter(function (c) { return c.change_type === 'new_page'; });
+      // new pages by competitor
+      var counts = {}, colors = ['#4f46e5', '#7c3aed', '#059669', '#d97706', '#dc2626', '#0891b2', '#7c3aed'];
+      np.forEach(function (c) { counts[c.domain] = (counts[c.domain] || 0) + 1; });
+      var sorted = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
+      var max = Math.max.apply(null, Object.values(counts).concat([1]));
+      var html = sorted.map(function (d, i) {
+        return "<div class='comp-hbar'><span class='name'>" + escapeHtml(d) + "</span>" +
+          "<div class='track'><div class='fill' style='width:" + (counts[d] / max * 100) + "%;background:" + colors[i % colors.length] + "'></div></div>" +
+          "<b>" + counts[d] + "</b></div>";
+      }).join('');
+      box.querySelector('.chart-new-pages').innerHTML = html || '<p class="sub">No new pages in range.</p>';
+
+      // section matrix
+      var sections = {}, secTotals = {};
+      np.forEach(function (c) {
+        var s = sectionOf(c.url);
+        secTotals[s] = (secTotals[s] || 0) + 1;
+        sections[c.domain] = sections[c.domain] || {};
+        sections[c.domain][s] = (sections[c.domain][s] || 0) + 1;
+      });
+      var topSections = Object.keys(secTotals).sort(function (a, b) { return secTotals[b] - secTotals[a]; }).slice(0, 6);
+      if (topSections.length) {
+        var rows = Object.keys(sections).sort().map(function (d) {
+          var rowTotal = Object.values(sections[d]).reduce(function (a, b) { return a + b; }, 0);
+          var cells = topSections.map(function (s) { return '<td>' + (sections[d][s] || '<span class="sub">—</span>') + '</td>'; }).join('');
+          return '<tr><td><b>' + escapeHtml(d) + '</b></td>' + cells + '<td><b>' + rowTotal + '</b></td></tr>';
+        }).join('');
+        box.querySelector('.chart-sections').innerHTML = "<div class='comp-matrix'><table><thead><tr><th>Competitor</th>" +
+          topSections.map(function (s) { return '<th>/' + escapeHtml(s) + '</th>'; }).join('') + "<th>Total</th></tr></thead><tbody>" + rows + "</tbody></table></div>";
+      } else {
+        box.querySelector('.chart-sections').innerHTML = '<p class="sub">No new pages in range.</p>';
+      }
+
+      // net words
+      var words = {};
+      changes.filter(function (c) { return c.change_type === 'content_update' && c.details && c.details.word_count_change; })
+        .forEach(function (c) { words[c.domain] = (words[c.domain] || 0) + c.details.word_count_change; });
+      var wSorted = Object.keys(words).sort(function (a, b) { return Math.abs(words[b]) - Math.abs(words[a]); });
+      var wMax = Math.max.apply(null, Object.values(words).map(Math.abs).concat([1]));
+      box.querySelector('.chart-words').innerHTML = wSorted.map(function (d) {
+        var v = words[d];
+        var color = v >= 0 ? '#059669' : '#dc2626';
+        return "<div class='comp-hbar'><span class='name'>" + escapeHtml(d) + "</span>" +
+          "<div class='track'><div class='fill' style='width:" + (Math.abs(v) / wMax * 100) + "%;background:" + color + "'></div></div>" +
+          "<b style='color:" + color + "'>" + (v > 0 ? '+' : '') + v + "</b></div>";
+      }).join('') || '<p class="sub">No content updates in range.</p>';
+
+      // type breakdown
+      var typeCounts = {};
+      changes.forEach(function (c) { typeCounts[c.change_type] = (typeCounts[c.change_type] || 0) + 1; });
+      var tSorted = Object.keys(typeCounts).sort(function (a, b) { return typeCounts[b] - typeCounts[a]; });
+      var tMax = Math.max.apply(null, Object.values(typeCounts).concat([1]));
+      var tColors = { new_page: '#059669', content_update: '#d97706', title_change: '#4f46e5', meta_change: '#7c3aed', h1_change: '#db2777', schema_change: '#0891b2', redirect: '#ea580c', page_removed: '#dc2626', url_case_change: '#6b7280' };
+      box.querySelector('.chart-types').innerHTML = tSorted.map(function (t) {
+        return "<div class='comp-hbar'><span class='name'>" + typeLabel(t, 2) + "</span>" +
+          "<div class='track'><div class='fill' style='width:" + (typeCounts[t] / tMax * 100) + "%;background:" + (tColors[t] || '#4f46e5') + "'></div></div>" +
+          "<b>" + typeCounts[t] + "</b></div>";
+      }).join('') || '<p class="sub">No changes in range.</p>';
+
+      // weekly trend (last 12 weeks)
+      var weeks = {};
+      changes.forEach(function (c) {
+        var d = new Date(c.timestamp);
+        var y = d.getFullYear();
+        var w = Math.floor((d - new Date(y, 0, 0)) / 604800000);
+        var key = y + '-W' + w;
+        weeks[key] = weeks[key] || { new_page: 0, content_update: 0, other: 0, total: 0 };
+        if (c.change_type === 'new_page') weeks[key].new_page++;
+        else if (c.change_type === 'content_update') weeks[key].content_update++;
+        else weeks[key].other++;
+        weeks[key].total++;
+      });
+      var wKeys = Object.keys(weeks).sort().slice(-12);
+      var wMax = Math.max.apply(null, wKeys.map(function (k) { return weeks[k].total; }).concat([1]));
+      box.querySelector('.chart-trend').innerHTML = wKeys.map(function (k) {
+        var w = weeks[k];
+        return "<div class='comp-hbar'><span class='name'>" + k + "</span>" +
+          "<div class='track'><div class='fill' style='width:" + (w.total / wMax * 100) + "%;background:linear-gradient(90deg,#059669 0%,#059669 " + (w.new_page / w.total * 100) + "%,#d97706 " + (w.new_page / w.total * 100) + "%,#d97706 " + ((w.new_page + w.content_update) / w.total * 100) + "%,#4f46e5 100%)'></div></div>" +
+          "<b>" + w.total + "</b></div>";
+      }).join('') || '<p class="sub">No weekly data yet.</p>';
+    }
+    function renderCompetitorPanel(box) {
+      var data = JSON.parse(box.getAttribute('data-competitor-json') || '{}');
+      var changes = data.changes || [];
+      var competitors = data.competitors || {};
+      var selfDomain = data.self_domain || '';
+      var days = parseInt(box.querySelector('.comp-days').value, 10) || 30;
+      var filtered = changes.filter(function (c) { return inRange(c.timestamp, days); });
+      var compFilter = box.querySelector('.comp-filter-competitor');
+      var typeFilter = box.querySelector('.comp-filter-type');
+      if (compFilter && compFilter.value) filtered = filtered.filter(function (c) { return c.domain === compFilter.value; });
+      if (typeFilter && typeFilter.value) filtered = filtered.filter(function (c) { return c.change_type === typeFilter.value; });
+
+      // overview stats
+      var totalPages = Object.values(competitors).reduce(function (s, d) { return s + (d.total_urls || 0); }, 0);
+      var selfNew = filtered.filter(function (c) { return c.change_type === 'new_page' && c.domain === selfDomain; }).length;
+      var rivalDomains = Object.keys(competitors).filter(function (d) { return d !== selfDomain; });
+      var rivalNew = filtered.filter(function (c) { return c.change_type === 'new_page' && c.domain !== selfDomain; }).length;
+      var rivalAvg = rivalDomains.length ? Math.round(rivalNew / rivalDomains.length) : 0;
+      var kpis = box.querySelector('.comp-kpis');
+      kpis.innerHTML = [
+        "<div class='comp-kpi'><div class='num'>" + Object.keys(competitors).length + "</div><div class='label'>Tracked competitors</div></div>",
+        "<div class='comp-kpi'><div class='num'>" + totalPages.toLocaleString() + "</div><div class='label'>Pages indexed</div></div>",
+        "<div class='comp-kpi'><div class='num'>" + filtered.filter(function (c) { return c.change_type === 'new_page'; }).length + "</div><div class='label'>New pages</div></div>",
+        "<div class='comp-kpi'><div class='num'>" + filtered.filter(function (c) { return c.change_type === 'content_update'; }).length + "</div><div class='label'>Content updates</div></div>",
+        "<div class='comp-kpi'><div class='num'>" + filtered.length + "</div><div class='label'>All changes</div></div>",
+        "<div class='comp-kpi'><div class='num' style='color:" + (selfNew >= rivalAvg ? '#059669' : '#dc2626') + "'>" + selfNew + " : " + rivalAvg + "</div><div class='label'>You vs rival avg</div></div>"
+      ].join('');
+
+      // competitor cards
+      var maxPages = Math.max.apply(null, Object.values(competitors).map(function (d) { return d.total_urls || 0; }).concat([1]));
+      var cards = box.querySelector('.comp-cards');
+      cards.innerHTML = Object.entries(competitors).map(function (entry, i) {
+        var domain = entry[0], d = entry[1];
+        var dc = filtered.filter(function (c) { return c.domain === domain; });
+        var secCounts = {};
+        dc.filter(function (c) { return c.change_type === 'new_page'; }).forEach(function (c) {
+          var s = sectionOf(c.url); secCounts[s] = (secCounts[s] || 0) + 1;
+        });
+        var topSec = Object.entries(secCounts).sort(function (a, b) { return b[1] - a[1]; })[0];
+        var color = ['#4f46e5', '#7c3aed', '#059669', '#d97706', '#dc2626', '#0891b2'][i % 6];
+        var isSelf = domain === selfDomain;
+        return "<div class='comp-card" + (isSelf ? ' you' : '') + "'><div class='comp-card-head'><h4>" + escapeHtml(d.name || domain) +
+          (isSelf ? "<span class='comp-you-badge'>you</span>" : '') + "</h4><div class='domain'>" + escapeHtml(domain) + "</div></div>" +
+          "<div class='row'><span>Pages</span><b>" + (d.total_urls || 0).toLocaleString() + "</b></div>" +
+          "<div class='row'><span>New</span><b style='color:#059669'>" + dc.filter(function (c) { return c.change_type === 'new_page'; }).length + "</b></div>" +
+          "<div class='row'><span>Updates</span><b style='color:#d97706'>" + dc.filter(function (c) { return c.change_type === 'content_update'; }).length + "</b></div>" +
+          "<div class='row'><span>Total</span><b>" + dc.length + "</b></div>" +
+          "<div class='row'><span>Top section</span><b>" + (topSec ? escapeHtml(topSec[0]) + ' (' + topSec[1] + ')' : '—') + "</b></div>" +
+          "<div class='bar'><div style='width:" + ((d.total_urls || 0) / maxPages * 100).toFixed(0) + "%;background:" + color + "'></div></div>";
+      }).join('');
+
+      // recent timeline (overview)
+      box.querySelector('.comp-overview-timeline').innerHTML = renderTimelineList(filtered.slice(0, 10), true);
+
+      // changes tab timeline
+      box.querySelector('.comp-changes-timeline').innerHTML = renderTimelineList(filtered, false);
+
+      // seo moves
+      var seo = filtered.filter(function (c) { return ['title_change', 'meta_change', 'h1_change', 'schema_change'].indexOf(c.change_type) > -1; });
+      box.querySelector('.comp-seo-list').innerHTML = seo.slice(0, 200).map(function (c) {
+        var det = c.details || {};
+        var body;
+        if (c.change_type === 'schema_change') {
+          body = (det.added_schemas || []).map(function (s) { return "<span class='comp-seo-tag up'>+" + escapeHtml(s) + "</span>"; }).join(' ') +
+            (det.removed_schemas || []).map(function (s) { return "<span class='comp-seo-tag down'>-" + escapeHtml(s) + "</span>"; }).join(' ');
+        } else {
+          var oldVal = det.old_title || det.old_meta || det.old_h1 || '';
+          var newVal = det.new_title || det.new_meta || det.new_h1 || '';
+          body = "<div class='sub'>" + escapeHtml(oldVal) + "</div><div>→</div><div>" + escapeHtml(newVal) + "</div>";
+        }
+        return "<div class='card' style='margin:8px 0;padding:12px 14px'><div style='display:flex;gap:10px;align-items:center;margin-bottom:6px'>" +
+          "<span class='comp-badge " + c.change_type + "'>" + typeLabel(c.change_type, 1) + "</span>" +
+          "<b>" + escapeHtml(c.competitor) + "</b> <a href='" + escapeHtml(c.url) + "' target='_blank' class='sub'>" + escapeHtml(c.title || c.url) + "</a></div>" + body + "</div>";
+      }).join('') || '<p class="sub">No on-page SEO changes in range.</p>';
+
+      // activity charts
+      renderCompetitorCharts(box, filtered, competitors, selfDomain);
+    }
+    function renderTimelineList(changes, compact) {
+      if (!changes.length) return '<p class="sub">No changes match the selected filters.</p>';
+      var groups = [];
+      changes.forEach(function (c) {
+        var day = new Date(c.timestamp).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        var last = groups[groups.length - 1];
+        if (!last || last.day !== day || last.domain !== c.domain) {
+          groups.push({ day: day, domain: c.domain, competitor: c.competitor, items: [] });
+        }
+        last = groups[groups.length - 1];
+        last.items.push(c);
+      });
+      var html = '', lastDay = '';
+      groups.forEach(function (g) {
+        if (g.day !== lastDay) { html += "<div class='comp-day'>" + g.day + "</div>"; lastDay = g.day; }
+        var counts = {};
+        g.items.forEach(function (c) { counts[c.change_type] = (counts[c.change_type] || 0) + 1; });
+        var summary = Object.entries(counts).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) {
+          return e[1] + ' ' + typeLabel(e[0], e[1]);
+        }).join(' · ');
+        html += "<div class='comp-group'>" +
+          "<div class='comp-group-head' onclick=\\\"this.parentElement.classList.toggle('open')\\\">" +
+          "<span class='comp-group-name'>" + escapeHtml(g.competitor) + "</span>" +
+          "<span class='comp-group-summary'>" + summary + "</span></div>" +
+          "<div class='comp-group-items'>" + g.items.map(function (c) { return renderChangeRow(c, compact); }).join('') + "</div></div>";
+      });
+      return html;
+    }
+    function renderChangeRow(c, compact) {
+      var det = c.details || {};
+      var tags = '';
+      if (det.word_count_change) {
+        tags += "<span class='comp-seo-tag " + (det.word_count_change > 0 ? 'up' : 'down') + "'>" + (det.word_count_change > 0 ? '+' : '') + det.word_count_change + "w</span>";
+      } else if (c.change_type === 'new_page' && det.word_count) {
+        tags += "<span class='comp-seo-tag'>" + det.word_count.toLocaleString() + "w</span>";
+      } else if (c.change_type === 'redirect' && det.status_code) {
+        tags += "<span class='comp-seo-tag'>" + det.status_code + "</span>";
+      }
+      var detailHtml = '';
+      if (!compact) {
+        var parts = [];
+        if (det.old_title && det.new_title) parts.push('Title: "' + escapeHtml(det.old_title) + '" → "' + escapeHtml(det.new_title) + '"');
+        if (det.old_meta && det.new_meta) parts.push('Meta: "' + escapeHtml(det.old_meta) + '" → "' + escapeHtml(det.new_meta) + '"');
+        if (det.old_h1 && det.new_h1) parts.push('H1: "' + escapeHtml(det.old_h1) + '" → "' + escapeHtml(det.new_h1) + '"');
+        if (det.redirect && det.redirect_to) parts.push('Redirect → <a href="' + escapeHtml(det.redirect_to) + '" target="_blank">' + escapeHtml(det.redirect_to) + '</a>');
+        if (det.added && det.added.length) parts.push('<div style="color:#059669"><b>+ added</b><br>' + det.added.map(escapeHtml).join('<br>') + '</div>');
+        if (det.removed && det.removed.length) parts.push('<div style="color:#dc2626"><b>- removed</b><br>' + det.removed.map(escapeHtml).join('<br>') + '</div>');
+        if (parts.length) detailHtml = "<div class='comp-row-detail'>" + parts.join('<br>') + "</div>";
+      }
+      return "<div>" +
+        "<div class='comp-row' onclick=\\\"this.nextElementSibling.classList.toggle('open')\\\">" +
+        "<span class='comp-badge " + c.change_type + "'>" + typeLabel(c.change_type, 1) + "</span>" +
+        "<span style='flex:1'>" + escapeHtml(c.title || c.url) + "</span>" +
+        "<span class='sub'>" + escapeHtml(sectionOf(c.url)) + "</span>" + tags + "</div>" +
+        detailHtml + "</div>";
+    }
+    document.querySelectorAll('.competitor-box').forEach(function (box) {
+      renderCompetitorPanel(box);
+      box.querySelectorAll('.comp-tab').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          box.querySelectorAll('.comp-tab').forEach(function (t) { t.classList.remove('active'); });
+          tab.classList.add('active');
+          box.querySelectorAll('.comp-panel').forEach(function (p) {
+            p.classList.toggle('active', p.getAttribute('data-tab') === tab.getAttribute('data-tab'));
+          });
+        });
+      });
+      box.querySelectorAll('.comp-days, .comp-filter-competitor, .comp-filter-type').forEach(function (el) {
+        el.addEventListener('change', function () { renderCompetitorPanel(box); });
+      });
+      box.querySelector('.comp-export').addEventListener('click', function () {
+        var data = JSON.parse(box.getAttribute('data-competitor-json') || '{}');
+        var rows = data.changes || [];
+        var csv = ['timestamp,property,competitor,domain,url,change_type,title,details'].join('\\n') +
+          rows.map(function (c) {
+            return [c.timestamp, c.property, c.competitor, c.domain, c.url, c.change_type, c.title, JSON.stringify(c.details || {})]
+              .map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');
+          }).join('\\n');
+        var blob = new Blob([csv], { type: 'text/csv' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'competitor_changes_' + data.property + '.csv';
+        a.click();
+      });
+    });
+  })();
 })();
 """
 
@@ -889,6 +1176,129 @@ def _research_empty_card():
             f"</div>")
 
 
+# ---------------------------------------------------------------- competitor tracker
+COMPETITOR_PROPERTIES = {
+    "vantagecircle": {"label": "Vantage Circle", "domain": "vantagecircle.com"},
+    "vantagefit": {"label": "Vantage Fit", "domain": "vantagefit.io"},
+}
+COMPETITOR_TYPE_OPTIONS = [
+    ("", "All types"),
+    ("new_page", "New page"),
+    ("content_update", "Content update"),
+    ("title_change", "Title change"),
+    ("meta_change", "Meta change"),
+    ("h1_change", "H1 change"),
+    ("schema_change", "Schema change"),
+    ("redirect", "Redirect"),
+    ("page_removed", "Page removed"),
+    ("url_case_change", "URL case change"),
+]
+
+
+def competitor_property_data(con, prop):
+    cfg = COMPETITOR_PROPERTIES[prop]
+    self_domain = cfg["domain"]
+    try:
+        changes = con.execute(
+            "SELECT timestamp, property, competitor, domain, url, change_type, title, details_json "
+            "FROM competitor_changes WHERE property=? ORDER BY timestamp DESC", (prop,)
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return None
+    if not changes:
+        return None
+
+    try:
+        snap_rows = con.execute(
+            "SELECT competitor, domain, total_urls, last_successful_crawl "
+            "FROM competitor_snapshots WHERE property=? "
+            "AND day=(SELECT MAX(day) FROM competitor_snapshots WHERE property=?)",
+            (prop, prop),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        snap_rows = []
+
+    competitors = {}
+    for comp, domain, total_urls, last_crawl in snap_rows:
+        competitors[domain] = {"name": comp, "total_urls": total_urls or 0,
+                               "last_successful_crawl": last_crawl or ""}
+
+    change_list = []
+    for ts, _, competitor, domain, url, ctype, title, details_json in changes:
+        det = json.loads(details_json or "{}")
+        change_list.append({
+            "timestamp": ts, "property": prop, "competitor": competitor,
+            "domain": domain, "url": url, "change_type": ctype,
+            "title": title or "", "details": det,
+        })
+        if domain not in competitors:
+            competitors[domain] = {"name": competitor, "total_urls": 0, "last_successful_crawl": ""}
+
+    # build competitor dropdown options
+    comp_options = "".join(
+        f"<option value='{esc(d)}'>{esc(c['name'])}</option>"
+        for d, c in sorted(competitors.items(), key=lambda x: x[1]["name"]))
+    type_options = "".join(
+        f"<option value='{esc(v)}'>{esc(l)}</option>" for v, l in COMPETITOR_TYPE_OPTIONS)
+
+    last_run = change_list[0]["timestamp"][:19].replace("T", " ") if change_list else "—"
+    json_payload = json.dumps({
+        "property": prop, "self_domain": self_domain,
+        "competitors": competitors, "changes": change_list,
+    }, default=str)
+
+    html = (f"<h2>Competitor Tracker — {esc(cfg['label'])} "
+            f"<span class='sub'>(last run: {esc(last_run)} UTC)</span></h2>"
+            f"<div class='card competitor-box' data-competitor-json='{esc(json_payload)}'>"
+            f"<div class='comp-tabs no-print'>"
+            f"<button class='comp-tab active' data-tab='overview'>Overview</button>"
+            f"<button class='comp-tab' data-tab='changes'>Changes</button>"
+            f"<button class='comp-tab' data-tab='seo'>SEO Moves</button>"
+            f"<button class='comp-tab' data-tab='activity'>Activity</button>"
+            f"<button class='comp-export'>Export CSV</button></div>"
+            # overview
+            f"<div class='comp-panel active' data-tab='overview'>"
+            f"<div class='comp-kpis'></div>"
+            f"<div class='comp-cards'></div>"
+            f"<h4 style='margin-top:20px'>Recent changes</h4>"
+            f"<div class='comp-overview-timeline comp-timeline'></div></div>"
+            # changes
+            f"<div class='comp-panel' data-tab='changes'>"
+            f"<div class='comp-filters no-print'>"
+            f"<select class='comp-filter-competitor'><option value=''>All competitors</option>{comp_options}</select>"
+            f"<select class='comp-filter-type'><option value=''>All types</option>{type_options}</select>"
+            f"<select class='comp-days'><option value='1'>Last 24 hours</option>"
+            f"<option value='7'>Last 7 days</option>"
+            f"<option value='14'>Last 14 days</option>"
+            f"<option value='30' selected>Last 30 days</option>"
+            f"<option value='90'>Last 90 days</option>"
+            f"<option value='0'>All time</option></select></div>"
+            f"<div class='comp-changes-timeline comp-timeline'></div></div>"
+            # seo moves
+            f"<div class='comp-panel' data-tab='seo'>"
+            f"<p class='sub'>On-page SEO edits competitors made to existing pages — title rewrites, meta changes, H1 swaps, and schema changes.</p>"
+            f"<div class='comp-seo-list'></div></div>"
+            # activity
+            f"<div class='comp-panel' data-tab='activity'>"
+            f"<div class='comp-chart'><h4>New pages by competitor</h4><div class='chart-new-pages'></div></div>"
+            f"<div class='comp-chart'><h4>New pages by section</h4><div class='chart-sections'></div></div>"
+            f"<div class='comp-chart'><h4>Net content investment (words)</h4><div class='chart-words'></div></div>"
+            f"<div class='comp-chart'><h4>Change type breakdown</h4><div class='chart-types'></div></div>"
+            f"<div class='comp-chart'><h4>Weekly trend</h4><div class='chart-trend'></div></div></div>"
+            f"</div>")
+    return html
+
+
+def competitor_tracker_pages(con):
+    """Return list of (panel_id, label, html) for properties with data."""
+    pages = []
+    for prop in COMPETITOR_PROPERTIES:
+        body = competitor_property_data(con, prop)
+        if body:
+            pages.append((f"comp-{prop}", COMPETITOR_PROPERTIES[prop]["label"], body))
+    return pages
+
+
 # ---------------------------------------------------------------- page assembly
 def build_panels(con):
     """[(panel_id, label, html, [(sub_id, sub_label), ...], group), ...] — only
@@ -903,6 +1313,10 @@ def build_panels(con):
         if page:
             panels.append((f"rank-{prop}", PROPERTIES[prop]["label"],
                            page, [], "Rank Tracker"))
+    comp_pages = competitor_tracker_pages(con)
+    if comp_pages:
+        for pid, label, body in comp_pages:
+            panels.append((pid, label, body, [], "Competitor Tracker"))
     bl = backlinks_section(con)
     if bl:
         panels.append(("backlinks", "Backlinks", bl, [], None))

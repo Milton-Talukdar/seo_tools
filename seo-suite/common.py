@@ -108,6 +108,22 @@ def init_db():
     CREATE TABLE IF NOT EXISTS seed_overview(
         seed TEXT PRIMARY KEY, volume INTEGER, kd REAL, cpc REAL,
         competition REAL, intent TEXT, serp_features TEXT, fetched TEXT);
+    CREATE TABLE IF NOT EXISTS competitor_pages(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        property TEXT, competitor TEXT, domain TEXT, url TEXT,
+        last_seen TEXT, title TEXT, meta TEXT, h1 TEXT,
+        schemas TEXT, word_count INTEGER, content_hash TEXT,
+        first_seen TEXT,
+        UNIQUE(property, competitor, url));
+    CREATE TABLE IF NOT EXISTS competitor_changes(
+        id TEXT PRIMARY KEY,
+        timestamp TEXT, property TEXT, competitor TEXT, domain TEXT,
+        url TEXT, change_type TEXT, title TEXT, details_json TEXT);
+    CREATE TABLE IF NOT EXISTS competitor_snapshots(
+        day TEXT, property TEXT, competitor TEXT, domain TEXT,
+        total_urls INTEGER, last_crawl TEXT, last_successful_crawl TEXT,
+        pages_hashed INTEGER, hash_failures INTEGER,
+        PRIMARY KEY(day, property, competitor));
     """)
     # v2 migration: rank_snapshots gained a `property` column
     cols = [r[1] for r in con.execute("PRAGMA table_info(rank_snapshots)")]
@@ -281,6 +297,67 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .feat-chip { display: inline-block; padding: 1px 7px; margin: 1px 2px 1px 0; border-radius: 6px;
              font-size: 10.5px; font-weight: 600; background: #eef1f6; color: #475569; }
 .tag-cell { color: var(--muted); font-size: 12px; }
+/* ---- competitor tracker ---- */
+.comp-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+.comp-tab { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: #f8fafc;
+             font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; }
+.comp-tab:hover { background: #eef1f6; }
+.comp-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.comp-export { margin-left: auto; padding: 7px 14px; border-radius: 8px; border: none;
+               background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff;
+               font-weight: 700; font-size: 12.5px; cursor: pointer; }
+.comp-panel { display: none; }
+.comp-panel.active { display: block; }
+.comp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.comp-kpi { background: #f8fafc; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.comp-kpi .num { font-size: 22px; font-weight: 800; color: var(--accent); }
+.comp-kpi .label { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.comp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 16px 0; }
+.comp-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; background: #fff; }
+.comp-card.you { border-color: #34d399; background: #f0fdf4; }
+.comp-card h4 { margin: 0 0 4px; font-size: 14px; }
+.comp-card .domain { font-size: 11.5px; color: var(--muted); }
+.comp-card .row { display: flex; justify-content: space-between; font-size: 12.5px; margin: 6px 0; }
+.comp-card .bar { margin-top: 10px; }
+.comp-you-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 5px; background: var(--you-soft); color: #047857; font-size: 9.5px; font-weight: 800; text-transform: uppercase; vertical-align: middle; }
+.comp-filters { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.comp-filters select, .comp-filters input { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; background: #f8fafc; }
+.comp-timeline { margin-top: 12px; }
+.comp-day { font-size: 11.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 14px 0 6px; }
+.comp-group { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+.comp-group-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #f8fafc; cursor: pointer; }
+.comp-group-name { font-weight: 600; font-size: 13px; }
+.comp-group-summary { font-size: 11.5px; color: var(--muted); }
+.comp-group-items { display: none; padding: 8px 12px 12px; }
+.comp-group.open .comp-group-items { display: block; }
+.comp-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; cursor: pointer; }
+.comp-row:last-child { border-bottom: none; }
+.comp-row-detail { display: none; padding: 10px 12px; background: #f8fafc; border-radius: 8px; margin-bottom: 8px; font-size: 12px; }
+.comp-row-detail.open { display: block; }
+.comp-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+.comp-badge.new_page { background: #d1fae5; color: #047857; }
+.comp-badge.content_update { background: #fef3c7; color: #92400e; }
+.comp-badge.title_change { background: #e0e7ff; color: #3730a3; }
+.comp-badge.meta_change { background: #ede9fe; color: #5b21b6; }
+.comp-badge.h1_change { background: #fce7f3; color: #9d174d; }
+.comp-badge.schema_change { background: #ecfeff; color: #0e7490; }
+.comp-badge.redirect { background: #ffedd5; color: #9a3412; }
+.comp-badge.page_removed { background: #ffe4e6; color: #9f1239; }
+.comp-badge.url_case_change { background: #f3f4f6; color: #374151; }
+.comp-seo-tag { display: inline-block; padding: 1px 7px; border-radius: 5px; background: #eef1f6; color: #475569; font-size: 10.5px; font-weight: 600; margin: 2px 4px 2px 0; }
+.comp-seo-tag.up { background: #d1fae5; color: #047857; }
+.comp-seo-tag.down { background: #ffe4e6; color: #9f1239; }
+.comp-chart { margin: 16px 0; }
+.comp-chart h4 { font-size: 13px; margin-bottom: 8px; }
+.comp-hbar { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 12px; }
+.comp-hbar .name { min-width: 140px; font-weight: 500; }
+.comp-hbar .track { flex: 1; height: 14px; background: #eceef5; border-radius: 999px; overflow: hidden; }
+.comp-hbar .fill { height: 100%; border-radius: 999px; }
+.comp-matrix { overflow-x: auto; }
+.comp-matrix table { font-size: 12px; min-width: 400px; }
+.comp-matrix th, .comp-matrix td { text-align: center; }
+.comp-matrix td:first-child, .comp-matrix th:first-child { text-align: left; }
+.comp-warning { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 10px 12px; border-radius: 10px; font-size: 12px; margin-bottom: 12px; }
 @media (max-width: 860px) {
   .sidebar { position: static; width: auto; flex-direction: row; align-items: center;
              overflow-x: auto; padding: 10px; border-right: none;
