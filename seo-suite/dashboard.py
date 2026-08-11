@@ -230,6 +230,27 @@ SCRIPT = """
     seedSel.addEventListener('change', update);
     update();
   })();
+
+  // ---- keyword research: click any keyword to populate the search box ----
+  (function () {
+    var wrap = document.querySelector('.research-wrap');
+    var form = document.querySelector('.research-form[data-worker-url]');
+    if (!wrap || !form) return;
+    var ta = form.querySelector('.research-seed-input');
+    if (!ta) return;
+    wrap.querySelectorAll('tbody td:first-child').forEach(function (td) {
+      td.style.cursor = 'pointer';
+      td.title = 'Click to search this keyword';
+      td.addEventListener('click', function () {
+        var kw = td.textContent.replace(/\s+/g, ' ').trim();
+        // remove the seed badge text if present
+        kw = kw.replace(/seed\s*$/i, '').trim();
+        ta.value = kw;
+        ta.focus();
+        window.scrollTo({ top: form.offsetTop - 20, behavior: 'smooth' });
+      });
+    });
+  })();
 })();
 """
 

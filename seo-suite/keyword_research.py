@@ -40,6 +40,33 @@ def fetch_ideas(seed, limit=DEFAULT_LIMIT):
     return items
 
 
+def fetch_seed_overview(seed):
+    """Fetch the seed's own search volume, KD, CPC, etc."""
+    result = dfs_post("/dataforseo_labs/google/keyword_overview/live", [{
+        "keywords": [seed],
+        "location_code": LOCATION_CODE,
+        "language_code": LANGUAGE,
+    }])
+    items = (result[0].get("items") if result else []) or []
+    if not items:
+        return None
+    it = items[0]
+    info = it.get("keyword_info") or {}
+    props = it.get("keyword_properties") or {}
+    intent_obj = props.get("keyword_intent") or {}
+    intent_label = ""
+    if isinstance(intent_obj, dict):
+        intent_label = max(intent_obj, key=intent_obj.get, default="")
+    return {
+        "volume": info.get("search_volume"),
+        "kd": props.get("keyword_difficulty"),
+        "cpc": info.get("cpc"),
+        "competition": info.get("competition"),
+        "intent": intent_label,
+        "serp_features": None,
+    }
+
+
 def parse_item(it):
     """Extract a flat dict of fields we care about from a keyword_ideas item."""
     keyword = (it.get("keyword") or "").strip()
@@ -86,18 +113,18 @@ def save(con, seed, rows):
              r["parent_topic"], today))
         n += 1
 
-    # Save the seed's own overview (use the seed's row from ideas if present)
-    seed_row = next((r for r in rows if r["keyword"].lower() == seed.lower()), None)
-    if seed_row is None:
-        seed_row = {"keyword": seed, "volume": None, "kd": None, "cpc": None,
-                    "competition": None, "intent": None, "serp_features": None}
+    # Save the seed's own overview from the dedicated keyword overview API
+    seed_overview = fetch_seed_overview(seed)
+    if seed_overview is None:
+        seed_overview = {"volume": None, "kd": None, "cpc": None,
+                         "competition": None, "intent": None, "serp_features": None}
     con.execute(
         "INSERT OR REPLACE INTO seed_overview "
         "(seed, volume, kd, cpc, competition, intent, serp_features, fetched) "
         "VALUES (?,?,?,?,?,?,?,?)",
-        (seed, seed_row["volume"], seed_row["kd"], seed_row["cpc"],
-         seed_row["competition"], seed_row["intent"] or None,
-         seed_row["serp_features"], today))
+        (seed, seed_overview["volume"], seed_overview["kd"], seed_overview["cpc"],
+         seed_overview["competition"], seed_overview["intent"] or None,
+         seed_overview["serp_features"], today))
     con.commit()
     return n
 
