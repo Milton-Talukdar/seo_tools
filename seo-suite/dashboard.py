@@ -215,6 +215,21 @@ SCRIPT = """
     });
     apply();
   })();
+
+  // ---- keyword research: show seed details card when a seed is selected ----
+  (function () {
+    var seedSel = document.querySelector('.research-wrap .research-seed');
+    var cards = document.querySelectorAll('.seed-detail-card');
+    if (!seedSel || !cards.length) return;
+    function update() {
+      var val = seedSel.value;
+      cards.forEach(function (c) {
+        c.style.display = c.getAttribute('data-seed') === val ? 'block' : 'none';
+      });
+    }
+    seedSel.addEventListener('change', update);
+    update();
+  })();
 })();
 """
 
@@ -700,8 +715,38 @@ def latest_llm_section(con):
     return "".join(out)
 
 
-def seed_overview_section(con):
-    """Ahrefs-style seed keyword overview cards above the ideas table."""
+def keyword_row_html(seed, keyword, vol, kd, cpc, comp, intent, feats, is_seed=False):
+    """Format one keyword/seed row for the research table."""
+    feats_list = []
+    try:
+        feats_list = json.loads(feats or "[]") or []
+    except (TypeError, ValueError):
+        pass
+    feat_html = "".join(f"<span class='feat-chip'>{esc(f)}</span>" for f in feats_list[:4])
+    if len(feats_list) > 4:
+        feat_html += f"<span class='sub'>+{len(feats_list) - 4}</span>"
+    intent_html = (f"<span class='feat-chip'>{esc(intent)}</span>" if intent else "")
+    vol_v = vol if vol is not None else ""
+    kd_v = kd if kd is not None else ""
+    cls = "seed-row" if is_seed else ""
+    label = "<span class='seed-badge'>seed</span>" if is_seed else ""
+    return (
+        f"<tr class='{cls}' data-keyword='{esc(keyword.lower())}' "
+        f"data-seed='{esc(seed)}' "
+        f"data-volume='{vol_v}' data-kd='{kd_v}'>"
+        f"<td>{esc(keyword)}{label}</td>"
+        f"<td class='tag-cell'>{esc(seed)}</td>"
+        f"<td class='num'>{f'{vol:,}' if vol is not None else '<span class=sub>—</span>'}</td>"
+        f"<td class='num'>{f'{kd:.0f}' if kd is not None else '<span class=sub>—</span>'}</td>"
+        f"<td class='num'>{f'${cpc:.2f}' if cpc is not None else '<span class=sub>—</span>'}</td>"
+        f"<td class='num'>{f'{comp:.2f}' if comp is not None else '<span class=sub>—</span>'}</td>"
+        f"<td>{intent_html or '<span class=sub>—</span>'}</td>"
+        f"<td>{feat_html or '<span class=sub>—</span>'}</td>"
+        f"</tr>")
+
+
+def seed_details_card(con):
+    """Hidden-by-default details card populated by JS when a seed is selected."""
     try:
         rows = con.execute(
             "SELECT seed, volume, kd, cpc, competition, intent, "
@@ -715,45 +760,44 @@ def seed_overview_section(con):
     for seed, vol, kd, cpc, comp, intent, feats, fetched in rows:
         intent_html = (f"<span class='feat-chip'>{esc(intent)}</span>" if intent else "")
         cards.append(
-            f"<div class='seed-card card'>"
-            f"<div class='seed-head'>"
-            f"<div class='seed-keyword'>{esc(seed)}</div>"
-            f"<div class='seed-meta'>overview · {esc(fetched or '')}</div></div>"
-            f"<div class='seed-kpis'>"
-            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"<div class='seed-detail-card card' data-seed='{esc(seed)}' style='display:none;'>"
+            f"<div class='seed-detail-head'>"
+            f"<div class='seed-detail-keyword'>{esc(seed)}</div>"
+            f"<div class='seed-detail-meta'>seed keyword</div></div>"
+            f"<div class='seed-detail-kpis'>"
+            f"<div class='seed-detail-kpi'><div class='seed-detail-val'>"
             f"{f'{vol:,}' if vol is not None else '—'}</div>"
-            f"<div class='seed-label'>Volume</div></div>"
-            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"<div class='seed-detail-label'>Volume</div></div>"
+            f"<div class='seed-detail-kpi'><div class='seed-detail-val'>"
             f"{f'{kd:.0f}' if kd is not None else '—'}</div>"
-            f"<div class='seed-label'>KD</div></div>"
-            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"<div class='seed-detail-label'>KD</div></div>"
+            f"<div class='seed-detail-kpi'><div class='seed-detail-val'>"
             f"{f'${cpc:.2f}' if cpc is not None else '—'}</div>"
-            f"<div class='seed-label'>CPC</div></div>"
-            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"<div class='seed-detail-label'>CPC</div></div>"
+            f"<div class='seed-detail-kpi'><div class='seed-detail-val'>"
             f"{f'{comp:.2f}' if comp is not None else '—'}</div>"
-            f"<div class='seed-label'>Competition</div></div>"
-            f"<div class='seed-kpi'><div class='seed-val'>"
+            f"<div class='seed-detail-label'>Competition</div></div>"
+            f"<div class='seed-detail-kpi'><div class='seed-detail-val'>"
             f"{intent_html or '—'}</div>"
-            f"<div class='seed-label'>Intent</div></div>"
+            f"<div class='seed-detail-label'>Intent</div></div>"
             f"</div></div>")
-    return f"<h2>Seed overview</h2><div class='seed-grid'>{''.join(cards)}</div>"
+    return f"<div class='seed-detail-wrap'>{''.join(cards)}</div>"
 
 
 def research_section(con):
-    """Keyword Research panel: seed overview + empty-state card + ideas table."""
+    """Keyword Research panel: search card + seed details + ideas table."""
     rows = con.execute(
         "SELECT seed, keyword, volume, kd, cpc, competition, intent, "
         "serp_features, fetched FROM keyword_research "
         "ORDER BY seed, volume DESC NULLS LAST, keyword").fetchall()
-    overview = seed_overview_section(con)
+    details = seed_details_card(con)
     if not rows:
-        # still show the empty-state card so users know how to populate it
-        return overview + _research_empty_card()
+        return details + _research_empty_card()
 
     seeds = sorted({r[0] for r in rows})
     seed_options = "".join(f"<option value='{esc(s)}'>{esc(s)}</option>" for s in seeds)
 
-    body = [f"<h2>Keyword Research</h2>{overview}{_research_empty_card()}"
+    body = [f"<h2>Keyword Research</h2>{_research_empty_card()}{details}"
             f"<div class='card research-wrap'>"
             f"<div class='table-tools no-print research-tools'>"
             f"<select class='research-seed'><option value=''>All seeds</option>"
@@ -768,31 +812,25 @@ def research_section(con):
             f"<th>Keyword</th><th>Seed</th><th>Volume</th><th>KD</th>"
             f"<th>CPC</th><th>Competition</th><th>Intent</th><th>SERP features</th>"
             f"</tr></thead><tbody>"]
+
+    # render seed rows first, then idea rows
+    by_seed = {}
     for seed, keyword, vol, kd, cpc, comp, intent, feats, fetched in rows:
-        feats_list = []
-        try:
-            feats_list = json.loads(feats or "[]") or []
-        except (TypeError, ValueError):
-            pass
-        feat_html = "".join(f"<span class='feat-chip'>{esc(f)}</span>" for f in feats_list[:4])
-        if len(feats_list) > 4:
-            feat_html += f"<span class='sub'>+{len(feats_list) - 4}</span>"
-        intent_html = (f"<span class='feat-chip'>{esc(intent)}</span>" if intent else "")
-        vol_v = vol if vol is not None else ""
-        kd_v = kd if kd is not None else ""
-        body.append(
-            f"<tr data-keyword='{esc(keyword.lower())}' "
-            f"data-seed='{esc(seed)}' "
-            f"data-volume='{vol_v}' data-kd='{kd_v}'>"
-            f"<td>{esc(keyword)}</td>"
-            f"<td class='tag-cell'>{esc(seed)}</td>"
-            f"<td class='num'>{f'{vol:,}' if vol is not None else '<span class=sub>—</span>'}</td>"
-            f"<td class='num'>{f'{kd:.0f}' if kd is not None else '<span class=sub>—</span>'}</td>"
-            f"<td class='num'>{f'${cpc:.2f}' if cpc is not None else '<span class=sub>—</span>'}</td>"
-            f"<td class='num'>{f'{comp:.2f}' if comp is not None else '<span class=sub>—</span>'}</td>"
-            f"<td>{intent_html or '<span class=sub>—</span>'}</td>"
-            f"<td>{feat_html or '<span class=sub>—</span>'}</td>"
-            f"</tr>")
+        by_seed.setdefault(seed, []).append((keyword, vol, kd, cpc, comp, intent, feats, fetched))
+
+    for seed in sorted(by_seed):
+        # seed overview from seed_overview table
+        ov = con.execute(
+            "SELECT volume, kd, cpc, competition, intent, serp_features "
+            "FROM seed_overview WHERE seed=?", (seed,)).fetchone()
+        if ov:
+            body.append(keyword_row_html(seed, seed, *ov, is_seed=True))
+        # idea rows
+        for keyword, vol, kd, cpc, comp, intent, feats, fetched in by_seed[seed]:
+            if keyword.lower() == seed.lower():
+                continue  # already rendered as seed row
+            body.append(keyword_row_html(seed, keyword, vol, kd, cpc, comp, intent, feats))
+
     body.append("</tbody></table></div>")
     return "".join(body)
 
