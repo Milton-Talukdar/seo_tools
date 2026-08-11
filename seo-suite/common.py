@@ -248,18 +248,21 @@ a.research-btn { padding: 8px 22px; border-radius: 8px; text-decoration: none;
 .research-status.ok { color: var(--you); }
 .research-status.err { color: var(--rose); }
 .research-tools input { max-width: 110px; }
-/* ---- seed overview (Ahrefs-style) ---- */
-.seed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-top: 14px; }
-.seed-card { padding: 18px 20px; }
-.seed-head { margin-bottom: 14px; }
-.seed-keyword { font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
-.seed-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.seed-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-.seed-kpi { text-align: center; padding: 10px; background: #f8fafc; border-radius: 10px; }
-.seed-val { font-size: 18px; font-weight: 800; color: var(--accent); line-height: 1.2; }
-.seed-label { font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+/* ---- seed keyword detail card + highlighted seed row ---- */
+.seed-detail-wrap { margin-top: 14px; }
+.seed-detail-card { padding: 18px 20px; }
+.seed-detail-head { margin-bottom: 14px; }
+.seed-detail-keyword { font-size: 18px; font-weight: 800; color: var(--ink); letter-spacing: -.01em; }
+.seed-detail-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.seed-detail-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.seed-detail-kpi { text-align: center; padding: 10px; background: #f8fafc; border-radius: 10px; }
+.seed-detail-val { font-size: 18px; font-weight: 800; color: var(--accent); line-height: 1.2; }
+.seed-detail-label { font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+.research-table tr.seed-row { background: #eef2ff; }
+.research-table tr.seed-row td:first-child { font-weight: 700; color: var(--accent); }
+.seed-badge { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase; background: var(--accent); color: #fff; }
 @media (max-width: 640px) {
-  .seed-kpis { grid-template-columns: repeat(3, 1fr); }
+  .seed-detail-kpis { grid-template-columns: repeat(3, 1fr); }
 }
 /* ---- rank tracker v2: one page per property + ahrefs-style cells ---- */
 .has-js .rank-prop { display: none; }
