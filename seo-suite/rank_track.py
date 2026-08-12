@@ -23,7 +23,7 @@ import time
 from datetime import date
 from pathlib import Path
 
-from common import DB_PATH, dfs_post, init_db, load_env
+from common import DB_PATH, dfs_post, init_db, load_env, supabase_upsert
 
 HERE = Path(__file__).parent
 
@@ -59,12 +59,15 @@ def read_keywords(path):
 
 
 def upsert_tags(con, prop, keywords):
+    meta_rows = []
     for keyword, tag in keywords:
         con.execute(
             "INSERT INTO keyword_meta(property, keyword, tag) VALUES (?,?,?) "
             "ON CONFLICT(property, keyword) DO UPDATE SET tag=excluded.tag",
             (prop, keyword, tag))
+        meta_rows.append({"property": prop, "keyword": keyword, "tag": tag})
     con.commit()
+    supabase_upsert("keyword_meta", meta_rows)
 
 
 def track_keyword(domain, keyword):
@@ -188,6 +191,7 @@ def main():
     load_env()
     today = date.today().isoformat()
     done = 0
+    rank_rows = []
     for prop, keywords in plan:
         domain = PROPERTIES[prop]["domain"]
         upsert_tags(con, prop, keywords)
@@ -200,11 +204,20 @@ def main():
             con.execute("INSERT OR REPLACE INTO rank_snapshots VALUES (?,?,?,?,?,?)",
                         (today, keyword, prop, position, url, json.dumps(features)))
             con.commit()
+            rank_rows.append({
+                "day": today,
+                "keyword": keyword,
+                "property": prop,
+                "position": position,
+                "url": url,
+                "serp_features": json.dumps(features),
+            })
             done += 1
             print(f"[{done}/{total}] {prop:14s} {keyword[:40]:40s} "
                   f"pos: {fmt(position):>3s}{'  ' + url[:55] if url else ''}")
             time.sleep(DELAY_SECONDS)
     print(f"\nSaved {done}/{total} results to {DB_PATH.name}")
+    supabase_upsert("rank_snapshots", rank_rows)
     report(con, props)
 
 

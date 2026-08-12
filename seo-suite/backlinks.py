@@ -19,7 +19,7 @@ Usage:
 import argparse
 from datetime import date
 
-from common import DB_PATH, dfs_post, init_db, load_env
+from common import DB_PATH, dfs_post, init_db, load_env, supabase_upsert
 
 # ---- edit these ------------------------------------------------------------
 TARGET = "vantagecircle.com"
@@ -55,7 +55,12 @@ def snapshot_summary(con, today):
     rank = pick(result, "rank") or 0
     con.execute("INSERT OR REPLACE INTO backlink_snapshots VALUES (?,?,?,?)",
                 (today, int(backlinks), int(refdomains), int(rank)))
-    return int(backlinks), int(refdomains), int(rank)
+    return {
+        "day": today,
+        "backlinks": int(backlinks),
+        "refdomains": int(refdomains),
+        "rank": int(rank),
+    }
 
 
 def snapshot_new_lost(con, today):
@@ -84,14 +89,17 @@ def snapshot_new_lost(con, today):
                 walk(v)
 
     walk(result)
+    rows = []
     for event, domain, rank in domains:
         con.execute("INSERT OR REPLACE INTO refdomain_events VALUES (?,?,?,?)",
                     (today, event, domain, rank))
+        rows.append({"day": today, "event": event, "domain": domain, "rank": rank})
     for event in ("new", "lost"):
         if event in counts:
             con.execute("INSERT OR REPLACE INTO refdomain_events VALUES (?,?,?,?)",
                         (today, event, AGGREGATE, counts[event]))
-    return counts
+            rows.append({"day": today, "event": event, "domain": AGGREGATE, "rank": counts[event]})
+    return counts, rows
 
 
 def report(con):
@@ -151,13 +159,16 @@ def main():
 
     load_env()
     today = date.today().isoformat()
-    backlinks, refdomains, rank = snapshot_summary(con, today)
-    print(f"totals: {backlinks:,} backlinks, {refdomains:,} refdomains, rank {rank}")
-    counts = snapshot_new_lost(con, today)
+    summary_row = snapshot_summary(con, today)
+    print(f"totals: {summary_row['backlinks']:,} backlinks, "
+          f"{summary_row['refdomains']:,} refdomains, rank {summary_row['rank']}")
+    counts, event_rows = snapshot_new_lost(con, today)
     print(f"new/lost refdomains (30-day window): "
           f"+{counts.get('new', 0)} / -{counts.get('lost', 0)}")
     con.commit()
     print(f"\nSaved snapshot to {DB_PATH.name}")
+    supabase_upsert("backlink_snapshots", [summary_row])
+    supabase_upsert("refdomain_events", event_rows)
     report(con)
 
 

@@ -32,7 +32,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-from common import DB_PATH, init_db
+from common import DB_PATH, init_db, supabase_upsert
 
 HERE = Path(__file__).parent
 CONFIG = HERE / "competitors.csv"
@@ -388,6 +388,9 @@ def run_property(con, cfg_rows, args):
     print(f"\n=== {property} ===")
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     ts = now()
+    page_rows = []
+    change_rows = []
+    snapshot_rows = []
 
     for row in cfg_rows:
         competitor = row["competitor"]
@@ -505,6 +508,20 @@ def run_property(con, cfg_rows, args):
                  parsed["h1"], json.dumps(parsed["schemas"]), parsed["word_count"], chash,
                  first_seen),
             )
+            page_rows.append({
+                "property": property,
+                "competitor": competitor,
+                "domain": domain,
+                "url": url,
+                "last_seen": ts,
+                "title": parsed["title"],
+                "meta": parsed["meta"],
+                "h1": parsed["h1"],
+                "schemas": json.dumps(parsed["schemas"]),
+                "word_count": parsed["word_count"],
+                "content_hash": chash,
+                "first_seen": first_seen,
+            })
 
             # write change events
             for change_type, details in changes_for_page:
@@ -517,6 +534,17 @@ def run_property(con, cfg_rows, args):
                     (chg_id, ts, property, competitor, domain, url, change_type,
                      parsed["title"], json.dumps(details)),
                 )
+                change_rows.append({
+                    "id": chg_id,
+                    "timestamp": ts,
+                    "property": property,
+                    "competitor": competitor,
+                    "domain": domain,
+                    "url": url,
+                    "change_type": change_type,
+                    "title": parsed["title"],
+                    "details_json": json.dumps(details),
+                })
                 change_count += 1
 
             if hashed % 25 == 0:
@@ -528,14 +556,26 @@ def run_property(con, cfg_rows, args):
         for norm in removed_norms:
             old = prev[norm]
             chg_id = "chg_" + short_hash(f"{property}:{competitor}:{norm}:page_removed:{ts}")
+            details = {"missing_runs": 1, "last_word_count": old["word_count"]}
             con.execute(
                 """INSERT OR REPLACE INTO competitor_changes
                    (id, timestamp, property, competitor, domain, url, change_type, title,
                     details_json)
                    VALUES (?,?,?,?,?,?,?,?,?)""",
                 (chg_id, ts, property, competitor, domain, old["url"], "page_removed",
-                 old["title"], json.dumps({"missing_runs": 1, "last_word_count": old["word_count"]})),
+                 old["title"], json.dumps(details)),
             )
+            change_rows.append({
+                "id": chg_id,
+                "timestamp": ts,
+                "property": property,
+                "competitor": competitor,
+                "domain": domain,
+                "url": old["url"],
+                "change_type": "page_removed",
+                "title": old["title"],
+                "details_json": json.dumps(details),
+            })
             # keep the page row but update last_seen? no, leave it; it will be re-added if it returns
             change_count += 1
 
@@ -547,8 +587,23 @@ def run_property(con, cfg_rows, args):
             (day, property, competitor, domain, len(urls), ts, ts if hashed else None,
              hashed, failures),
         )
+        snapshot_rows.append({
+            "day": day,
+            "property": property,
+            "competitor": competitor,
+            "domain": domain,
+            "total_urls": len(urls),
+            "last_crawl": ts,
+            "last_successful_crawl": ts if hashed else None,
+            "pages_hashed": hashed,
+            "hash_failures": failures,
+        })
         con.commit()
         print(f"  hashed: {hashed}, failures: {failures}, changes: {change_count}")
+
+    supabase_upsert("competitor_pages", page_rows)
+    supabase_upsert("competitor_changes", change_rows)
+    supabase_upsert("competitor_snapshots", snapshot_rows)
 
 
 def main():
