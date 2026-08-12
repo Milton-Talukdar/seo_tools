@@ -71,7 +71,7 @@ def load_env():
         return
 
 
-def dfs_post(path, payload, retries=2):
+def dfs_post(path, payload, retries=2, timeout=180):
     auth = base64.b64encode(
         f"{os.environ['DATAFORSEO_LOGIN']}:{os.environ['DATAFORSEO_PASSWORD']}".encode()
     ).decode()
@@ -84,7 +84,7 @@ def dfs_post(path, payload, retries=2):
                          "Content-Type": "application/json"},
                 method="POST",
             )
-            with request.urlopen(req, timeout=180) as r:
+            with request.urlopen(req, timeout=timeout) as r:
                 data = json.load(r)
             task = data["tasks"][0]
             if task.get("status_code") != 20000:
