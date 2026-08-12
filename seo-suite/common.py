@@ -124,6 +124,18 @@ def init_db():
         total_urls INTEGER, last_crawl TEXT, last_successful_crawl TEXT,
         pages_hashed INTEGER, hash_failures INTEGER,
         PRIMARY KEY(day, property, competitor));
+    CREATE TABLE IF NOT EXISTS freshness_scores(
+        day TEXT, url TEXT, property TEXT, page_type TEXT,
+        title TEXT, h1 TEXT, published_date TEXT, modified_date TEXT,
+        age_days INTEGER, word_count INTEGER, internal_links INTEGER,
+        external_links INTEGER, schema_types TEXT, status_code INTEGER,
+        canonical TEXT, freshness_score INTEGER, depth_score INTEGER,
+        decay_risk TEXT, target_keyword TEXT, position INTEGER,
+        volume INTEGER, rank_drop_30d REAL, rank_drop_60d REAL,
+        rank_drop_90d REAL, traffic_28d INTEGER, traffic_prev_28d INTEGER,
+        traffic_drop_pct REAL, decay_score REAL, priority_score REAL,
+        action TEXT, reason TEXT, last_crawled TEXT,
+        PRIMARY KEY(day, url));
     """)
     # v2 migration: rank_snapshots gained a `property` column
     cols = [r[1] for r in con.execute("PRAGMA table_info(rank_snapshots)")]

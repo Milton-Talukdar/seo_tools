@@ -538,6 +538,88 @@ SCRIPT = """
       });
     });
   })();
+
+  // ---- content freshness: search + filters + sorting ----
+  (function () {
+    var wrap = document.querySelector('.freshness-wrap');
+    if (!wrap) return;
+    var search = wrap.querySelector('.freshness-search');
+    var propSel = wrap.querySelector('.freshness-property');
+    var typeSel = wrap.querySelector('.freshness-type');
+    var actionSel = wrap.querySelector('.freshness-action');
+    var riskSel = wrap.querySelector('.freshness-risk');
+    var tbody = wrap.querySelector('tbody');
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    var count = wrap.querySelector('.freshness-count');
+    var ths = wrap.querySelectorAll('th.sortable');
+    var sortKey = 'priority', sortDir = -1;
+
+    function applyFilter() {
+      var q = search ? search.value.toLowerCase() : '';
+      var prop = propSel ? propSel.value : '';
+      var ptype = typeSel ? typeSel.value : '';
+      var action = actionSel ? actionSel.value : '';
+      var risk = riskSel ? riskSel.value : '';
+      var n = 0;
+      rows.forEach(function (r) {
+        var ok = true;
+        if (q && r.getAttribute('data-search').indexOf(q) === -1) ok = false;
+        if (ok && prop && r.getAttribute('data-property') !== prop) ok = false;
+        if (ok && ptype && r.getAttribute('data-type') !== ptype) ok = false;
+        if (ok && action && r.getAttribute('data-action') !== action) ok = false;
+        if (ok && risk && r.getAttribute('data-risk') !== risk) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' pages';
+    }
+
+    function keyVal(r, k) {
+      var v = r.getAttribute('data-' + k);
+      if (k === 'display' || k === 'keyword' || k === 'risk' || k === 'action') return (v || '').toLowerCase();
+      return v === '' || v == null ? null : parseFloat(v);
+    }
+
+    function cmp(a, b) {
+      var va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+      if (sortKey !== 'display' && sortKey !== 'keyword') {
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;
+        if (vb === null) return -1;
+      }
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    }
+
+    function applySort() {
+      rows.sort(cmp);
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      ths.forEach(function (th) {
+        var arr = th.querySelector('.arrow');
+        if (arr) arr.textContent =
+          th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+      });
+    }
+
+    ths.forEach(function (th) {
+      th.addEventListener('click', function () {
+        var k = th.getAttribute('data-sort');
+        if (k === sortKey) { sortDir = -sortDir; }
+        else {
+          sortKey = k;
+          sortDir = (k === 'display' || k === 'keyword') ? 1 : -1;
+        }
+        applySort();
+      });
+    });
+
+    [search, propSel, typeSel, actionSel, riskSel].forEach(function (el) {
+      if (el) el.addEventListener('input', applyFilter);
+    });
+    applySort();
+    applyFilter();
+  })();
 })();
 """
 
@@ -1299,6 +1381,141 @@ def competitor_tracker_pages(con):
     return pages
 
 
+# ---------------------------------------------------------------- content freshness
+
+def freshness_section(con):
+    """Content Freshness / Decay panel: KPIs + candidates + full table."""
+    latest = con.execute("SELECT MAX(day) FROM freshness_scores").fetchone()[0]
+    if not latest:
+        return ""
+
+    rows = con.execute(
+        """SELECT url, property, page_type, title, age_days, word_count,
+                  freshness_score, depth_score, decay_risk, target_keyword,
+                  position, volume, action, reason, priority_score,
+                  traffic_28d, traffic_drop_pct, rank_drop_30d
+           FROM freshness_scores WHERE day=? ORDER BY priority_score DESC""",
+        (latest,),
+    ).fetchall()
+    if not rows:
+        return ""
+
+    total = len(rows)
+    high_risk = sum(1 for r in rows if r[8] == "HIGH")
+    avg_age = int(sum(r[4] for r in rows if r[4] < 9000) / max(1, sum(1 for r in rows if r[4] < 9000)))
+    action_counts = {}
+    for r in rows:
+        action_counts[r[12]] = action_counts.get(r[12], 0) + 1
+
+    def risk_chip(risk):
+        cls = {"LOW": "you", "MEDIUM": "cite", "HIGH": "none"}.get(risk, "")
+        return f"<span class='chip {cls}'>{esc(risk)}</span>"
+
+    def action_chip(action):
+        cls = {"UPDATE": "none", "REFRESH": "cite", "EXPAND": "cite",
+               "PRUNE": "none", "FIX": "none", "MONITOR": "you"}.get(action, "")
+        return f"<span class='chip {cls}'>{esc(action)}</span>"
+
+    def bar(score, color_class=""):
+        return (f"<div class='bar {color_class}'><div style='width:{max(0, min(100, score))}%'"
+                f" title='{score}'></div></div>")
+
+    # KPI cards
+    cards = [
+        ("Pages monitored", f"{total}", f"as of {latest}"),
+        ("High decay risk", f"{high_risk}", f"{round(high_risk/total*100, 1)}% of pages"),
+        ("Average age", f"{avg_age}", "days since last update"),
+        ("Needs action", f"{sum(v for k, v in action_counts.items() if k != 'MONITOR')}", "refresh/update/prune/fix"),
+    ]
+    kpi_html = "<div class='kpis'>" + "".join(
+        f"<div class='kpi'><div class='num'>{esc(num)}</div><div class='label'>{esc(label)}"
+        f"<br><span class='sub'>{esc(sub)}</span></div></div>"
+        for label, num, sub in cards
+    ) + "</div>"
+
+    # Top candidates
+    candidates = [r for r in rows if r[12] != "MONITOR"][:15]
+    candidates_html = ""
+    if candidates:
+        cand_rows = []
+        for r in candidates:
+            url, prop, ptype, title, age, wc, fresh, depth, risk, kw, pos, vol, action, reason, prio, t28, tdrop, rdrop = r
+            display = (title or url).replace("https://", "").replace("http://", "")
+            if len(display) > 65:
+                display = display[:62] + "…"
+            cand_rows.append(
+                f"<tr>"
+                f"<td><a href='{esc(url)}' target='_blank'>{esc(display)}</a></td>"
+                f"<td>{esc(prop)}</td>"
+                f"<td>{age}</td>"
+                f"<td>{action_chip(action)}</td>"
+                f"<td>{prio}</td>"
+                f"<td class='sub'>{esc(reason)}</td>"
+                f"</tr>"
+            )
+        candidates_html = (
+            f"<div class='card'><b>Top action candidates</b>"
+            f"<table><thead><tr><th>Page</th><th>Property</th><th>Age</th>"
+            f"<th>Action</th><th>Priority</th><th>Reason</th></tr></thead><tbody>"
+            f"{''.join(cand_rows)}</tbody></table></div>")
+
+    # Full table
+    table_rows = []
+    for r in rows:
+        url, prop, ptype, title, age, wc, fresh, depth, risk, kw, pos, vol, action, reason, prio, t28, tdrop, rdrop = r
+        display = (title or url).replace("https://", "").replace("http://", "")
+        if len(display) > 70:
+            display = display[:67] + "…"
+        search = " ".join(str(x).lower() for x in (url, title, kw, prop, ptype, action, reason, risk) if x)
+        table_rows.append(
+            f"<tr data-search='{esc(search)}' data-property='{esc(prop)}' data-type='{esc(ptype)}'"
+            f" data-action='{esc(action)}' data-risk='{esc(risk)}' data-age='{age}' data-priority='{prio}'>"
+            f"<td><a href='{esc(url)}' target='_blank'>{esc(display)}</a></td>"
+            f"<td>{esc(prop)}</td><td>{esc(ptype)}</td><td>{age}</td><td>{wc}</td>"
+            f"<td>{fresh}</td><td>{depth}</td><td>{risk_chip(risk)}</td>"
+            f"<td>{esc(kw or '')}</td><td>{pos if pos and pos <= 100 else '—'}</td><td>{vol or '—'}</td>"
+            f"<td>{action_chip(action)}</td><td class='sub'>{esc(reason)}</td>"
+            f"</tr>"
+        )
+
+    properties = sorted({r[1] for r in rows})
+    types = sorted({r[2] for r in rows})
+    actions = sorted({r[12] for r in rows})
+    risks = sorted({r[8] for r in rows})
+
+    prop_opts = "<option value=''>All properties</option>" + "".join(f"<option value='{esc(p)}'>{esc(p)}</option>" for p in properties)
+    type_opts = "<option value=''>All types</option>" + "".join(f"<option value='{esc(t)}'>{esc(t)}</option>" for t in types)
+    action_opts = "<option value=''>All actions</option>" + "".join(f"<option value='{esc(a)}'>{esc(a)}</option>" for a in actions)
+    risk_opts = "<option value=''>All risks</option>" + "".join(f"<option value='{esc(r)}'>{esc(r)}</option>" for r in risks)
+
+    table_html = (
+        f"<div class='card freshness-wrap'>"
+        f"<div class='table-tools no-print freshness-tools'>"
+        f"<input class='freshness-search' type='search' placeholder='Search pages…'>"
+        f"<select class='freshness-property'>{prop_opts}</select>"
+        f"<select class='freshness-type'>{type_opts}</select>"
+        f"<select class='freshness-action'>{action_opts}</select>"
+        f"<select class='freshness-risk'>{risk_opts}</select>"
+        f"<span class='freshness-count sub'>{total} pages</span></div>"
+        f"<table class='freshness-table'><thead><tr>"
+        f"<th class='sortable' data-sort='display'>Page <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='property'>Property <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='type'>Type <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='age'>Age <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='word_count'>Words <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='freshness'>Fresh <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='depth'>Depth <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='risk'>Risk <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='keyword'>Keyword <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='position'>Pos <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='volume'>Vol <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='action'>Action <span class='arrow'></span></th>"
+        f"<th>Reason</th>"
+        f"</tr></thead><tbody>{''.join(table_rows)}</tbody></table></div>")
+
+    return f"<h2>Content Freshness</h2>{kpi_html}{candidates_html}{table_html}"
+
+
 # ---------------------------------------------------------------- page assembly
 def build_panels(con):
     """[(panel_id, label, html, [(sub_id, sub_label), ...], group), ...] — only
@@ -1320,6 +1537,9 @@ def build_panels(con):
     bl = backlinks_section(con)
     if bl:
         panels.append(("backlinks", "Backlinks", bl, [], None))
+    fr = freshness_section(con)
+    if fr:
+        panels.append(("freshness", "Content Freshness", fr, [], None))
     rs = research_section(con)
     if rs:
         panels.append(("research", "Keyword Research", rs, [], None))
