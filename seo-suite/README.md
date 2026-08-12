@@ -44,6 +44,7 @@ python3 enrich.py --force            # refresh keyword_meta now (~$0.85)
 python3 freshness.py --dry-run       # preview which pages would be crawled
 python3 freshness.py --limit 20      # smoke test: 20 URLs per sitemap
 python3 freshness.py --force         # full monthly freshness/decay run
+python3 freshness.py --page-type blog # crawl only blog sitemaps
 python3 dashboard.py --open          # build index.html and open it in your browser
 
 # Ahrefs history imports (read-only on all sources):
@@ -87,6 +88,9 @@ secret the module still works using rank-trend data only.
   or import a VF overview export with
   `python3 import_ahrefs.py overview <file> --property vantagefit`).
   Format: `keyword,tag` — one per line, tag optional.
+- **Freshness sitemaps:** `freshness_sitemaps.csv` lists which sitemaps to crawl.
+  It defaults to VC + VF blogs only (highest decay risk, most actionable); add
+  page sitemaps later once the refresh workflow is established.
 - **Brands / domain / models / location:** constants at the top of each module
 - **History:** `import_ahrefs.py overview` backfills previous/current positions,
   tags, volume, KD, CPC, intent, SERP features, and traffic in one pass; run it
