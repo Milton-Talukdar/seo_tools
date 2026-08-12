@@ -169,14 +169,15 @@ def parse_sitemap(url: str, limit: int = 0):
 
 
 def load_config():
-    """[(property, page_type, sitemap_url), ...]"""
+    """[(property, page_type, sitemap_url, url_pattern), ...]"""
     rows = []
     if not CONFIG.exists():
         return rows
     for rec in csv.reader(open(CONFIG, encoding="utf-8")):
         if not rec or rec[0].strip().startswith("#"):
             continue
-        rows.append((rec[0].strip(), rec[1].strip(), rec[2].strip()))
+        rows.append((rec[0].strip(), rec[1].strip(), rec[2].strip(),
+                     rec[3].strip() if len(rec) > 3 else ""))
     return rows
 
 
@@ -670,7 +671,7 @@ def should_run(con, force: bool) -> bool:
 
 def run(args):
     con = init_db()
-    if not should_run(con, args.force):
+    if not args.dry_run and not should_run(con, args.force):
         last = con.execute("SELECT MAX(day) FROM freshness_scores").fetchone()[0]
         print(f"Freshness crawl is gated until {MIN_DAYS_BETWEEN_RUNS} days pass (last: {last}). Use --force to override.")
         return
@@ -678,6 +679,8 @@ def run(args):
     configs = load_config()
     if args.property:
         configs = [c for c in configs if c[0] == args.property]
+    if args.page_type:
+        configs = [c for c in configs if c[1] == args.page_type]
     if not configs:
         print("No sitemap configs matched.")
         return
@@ -692,14 +695,20 @@ def run(args):
 
     # map property -> best GSC site_url heuristic
     gsc_site_urls = {}
-    for prop, _, sm_url in configs:
+    for prop, _, sm_url, _ in configs:
         parsed = urlparse(sm_url)
         gsc_site_urls[prop] = f"https://{parsed.netloc}/"
 
-    for prop, page_type, sm_url in configs:
+    for prop, page_type, sm_url, url_pattern in configs:
         print(f"\n[{prop}/{page_type}] parsing {sm_url}")
-        urls = parse_sitemap(sm_url, limit=args.limit)
-        print(f"  found {len(urls)} URLs")
+        urls = parse_sitemap(sm_url, limit=0)
+        if url_pattern:
+            before = len(urls)
+            urls = [(u, lm) for u, lm in urls if re.match(url_pattern, u)]
+            print(f"  matched {len(urls)} of {before} URLs by pattern")
+        if args.limit:
+            urls = urls[:args.limit]
+        print(f"  will crawl {len(urls)} URLs")
         if args.dry_run:
             continue
 
@@ -808,6 +817,7 @@ def main():
     ap.add_argument("--limit", type=int, default=MAX_PAGES_PER_SITEMAP,
                     help=f"Max URLs per sitemap (default {MAX_PAGES_PER_SITEMAP})")
     ap.add_argument("--property", help="Only run for this property")
+    ap.add_argument("--page-type", help="Only run for this page type (e.g. blog, page)")
     args = ap.parse_args()
     run(args)
 
