@@ -38,6 +38,9 @@ MODELS = {"chat_gpt": "gpt-5.5",     # pinned for comparable runs over time
 LOCATION_CODE = 2840                 # 2840 = United States
 LANGUAGE = "English"
 DELAY_SECONDS = 1                    # pause between API calls
+MAX_RUNTIME_SECONDS = 45 * 60        # hard ceiling so GitHub Actions never hangs
+LLM_TIMEOUT = 60                     # per-call timeout for the AI Optimization API
+LLM_RETRIES = 1                      # one retry on transient timeout/error
 # -----------------------------------------------------------------------------
 
 URL_RE = re.compile(r"https?://[^\s)\]>\"']+")
@@ -72,7 +75,8 @@ def ask_llm(platform, prompt):
             "location_code": LOCATION_CODE}
     if MODELS.get(platform):
         task["model_name"] = MODELS[platform]
-    result = dfs_post(f"/ai_optimization/{platform}/llm_responses/live", [task])
+    result = dfs_post(f"/ai_optimization/{platform}/llm_responses/live", [task],
+                      retries=LLM_RETRIES, timeout=LLM_TIMEOUT)
     return extract(result)
 
 
@@ -134,8 +138,15 @@ def main():
     today = date.today().isoformat()
     done = 0
     rows = []
+    started_at = time.time()
+    time_exceeded = False
     for prompt in prompts:
         for platform in PLATFORMS:
+            if time.time() - started_at > MAX_RUNTIME_SECONDS:
+                time_exceeded = True
+                print(f"\nWARNING: stopping after ~{MAX_RUNTIME_SECONDS // 60} min runtime ceiling",
+                      file=sys.stderr)
+                break
             try:
                 answer, links = ask_llm(platform, prompt)
             except Exception as e:
@@ -161,6 +172,8 @@ def main():
             print(f"[{done}/{total}] {platform:11s} {prompt[:45]:45s} "
                   f"mentions: {found}{'  +CITED' if cited else ''}")
             time.sleep(DELAY_SECONDS)
+        if time_exceeded:
+            break
     print(f"\nSaved {done}/{total} results to {DB_PATH.name}")
     supabase_upsert("llm_snapshots", rows)
     report(con)
