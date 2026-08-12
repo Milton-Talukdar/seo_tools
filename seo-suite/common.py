@@ -16,12 +16,45 @@ import time
 from pathlib import Path
 from urllib import request
 
+from supabase import create_client
+
 HERE = Path(__file__).parent
 DB_PATH = HERE / "seo_suite.db"
 ENV_PATH = HERE / ".env"
 FALLBACK_ENV_PATH = HERE.parent / "llm-keyword-tracker" / ".env"
 
 BASE = "https://api.dataforseo.com/v3"
+SUPABASE_BATCH = 500
+
+
+def supabase_client():
+    """Return a Supabase client if credentials are configured, else None."""
+    load_env()
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not key:
+        return None
+    return create_client(url, key)
+
+
+def supabase_upsert(table, rows, batch_size=SUPABASE_BATCH):
+    """Upsert a list of dict rows to Supabase. Warn (don't raise) on errors
+    or missing credentials so local runs without Supabase keep working."""
+    if not rows:
+        return
+    client = supabase_client()
+    if not client:
+        print(f"[supabase] skipping {table}: credentials not configured")
+        return
+    try:
+        total = 0
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i + batch_size]
+            client.table(table).upsert(batch).execute()
+            total += len(batch)
+        print(f"[supabase] upserted {total} rows to {table}")
+    except Exception as e:
+        print(f"[supabase] warning: failed to upsert {table}: {e}")
 
 
 def load_env():

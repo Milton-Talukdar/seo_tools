@@ -196,3 +196,8 @@ CREATE TABLE IF NOT EXISTS freshness_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_freshness_scores_property ON freshness_scores(property, day DESC);
 CREATE INDEX IF NOT EXISTS idx_freshness_scores_action ON freshness_scores(action);
+
+-- Enrichment run log
+CREATE TABLE IF NOT EXISTS enrich_log (
+    day DATE PRIMARY KEY
+);

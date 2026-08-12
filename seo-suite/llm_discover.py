@@ -23,7 +23,7 @@ import re
 from datetime import date, timedelta
 from pathlib import Path
 
-from common import dfs_post, init_db, load_env
+from common import dfs_post, init_db, load_env, supabase_upsert
 from llm_visibility import BRANDS, MY_DOMAIN
 
 HERE = Path(__file__).parent
@@ -42,6 +42,7 @@ def check_silent_citations(con, today):
         "target": [{"domain": MY_DOMAIN}],
         "limit": 100}])
     items = (result[0].get("items") if result else []) or []
+    rows = []
     kept = 0
     brand = BRANDS[0]                          # "vantage circle"
     bare = MY_DOMAIN.split(".")[0]             # "vantagecircle"
@@ -51,12 +52,17 @@ def check_silent_citations(con, today):
         text = text.lower().replace(".", "")
         named = brand in text or bare in text
         if MY_DOMAIN in srcs and not named:
+            row = {
+                "day": today,
+                "query": (it.get("question") or "").strip(),
+                "platform": it.get("platform") or "?",
+                "ai_search_volume": it.get("ai_search_volume") or 0,
+            }
             con.execute("INSERT OR REPLACE INTO silent VALUES (?,?,?,?)",
-                        (today, (it.get("question") or "").strip(),
-                         it.get("platform") or "?",
-                         it.get("ai_search_volume") or 0))
+                        (row["day"], row["query"], row["platform"], row["ai_search_volume"]))
+            rows.append(row)
             kept += 1
-    return kept
+    return kept, rows
 
 
 def due(con):
@@ -81,15 +87,23 @@ def snapshot_volumes(con, seeds, today):
                       [{"language_name": "English", "location_code": 2840,
                         "keywords": seeds}])
     items = (result[0].get("items") if result else []) or []
+    rows = []
     for it in items:
+        row = {
+            "day": today,
+            "keyword": it["keyword"],
+            "ai_search_volume": it.get("ai_search_volume") or 0,
+            "trend_json": json.dumps(it.get("ai_monthly_searches") or []),
+        }
         con.execute("INSERT OR REPLACE INTO volumes VALUES (?,?,?,?)",
-                    (today, it["keyword"], it.get("ai_search_volume") or 0,
-                     json.dumps(it.get("ai_monthly_searches") or [])))
-    return len(items)
+                    (row["day"], row["keyword"], row["ai_search_volume"], row["trend_json"]))
+        rows.append(row)
+    return len(items), rows
 
 
 def mine_questions(con, seeds, today):
     kept = 0
+    rows = []
     for seed in seeds:
         result = dfs_post("/ai_optimization/llm_mentions/search_mentions/live", [{
             "language_name": "English", "location_code": 2840,
@@ -101,16 +115,27 @@ def mine_questions(con, seeds, today):
             if not q or not is_relevant(q, seed):
                 continue
             vol = it.get("ai_search_volume") or 0
-            row = con.execute("SELECT ai_search_volume, first_seen FROM discovered "
-                              "WHERE query=?", (q,)).fetchone()
-            if row:
+            platform = it.get("platform") or "?"
+            existing = con.execute("SELECT ai_search_volume, first_seen FROM discovered "
+                                   "WHERE query=?", (q,)).fetchone()
+            if existing:
+                first_seen = existing[1]
                 con.execute("UPDATE discovered SET ai_search_volume=?, last_seen=? "
-                            "WHERE query=?", (max(row[0], vol), today, q))
+                            "WHERE query=?", (max(existing[0], vol), today, q))
             else:
+                first_seen = today
                 con.execute("INSERT INTO discovered VALUES (?,?,?,?,?,?)",
-                            (q, it.get("platform") or "?", vol, seed, today, today))
+                            (q, platform, vol, seed, today, today))
+            rows.append({
+                "query": q,
+                "platform": platform,
+                "ai_search_volume": vol,
+                "seed": seed,
+                "first_seen": first_seen,
+                "last_seen": today,
+            })
             kept += 1
-    return kept
+    return kept, rows
 
 
 def main():
@@ -132,14 +157,17 @@ def main():
     today = date.today().isoformat()
 
     if args.only in (None, "volumes"):
-        n_vol = snapshot_volumes(con, seeds, today)
+        n_vol, vol_rows = snapshot_volumes(con, seeds, today)
         print(f"volumes: {n_vol} keywords snapshotted")
+        supabase_upsert("volumes", vol_rows)
     if args.only in (None, "mentions"):
-        n_q = mine_questions(con, seeds, today)
+        n_q, discovered_rows = mine_questions(con, seeds, today)
         print(f"discovered: {n_q} relevant real-user questions stored")
+        supabase_upsert("discovered", discovered_rows)
     if args.only in (None, "silent"):
-        n_s = check_silent_citations(con, today)
+        n_s, silent_rows = check_silent_citations(con, today)
         print(f"silent citations: {n_s} answers source your site without naming you")
+        supabase_upsert("silent", silent_rows)
     con.commit()
 
 

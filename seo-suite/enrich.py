@@ -21,7 +21,7 @@ import json
 import time
 from datetime import date, timedelta
 
-from common import dfs_post, init_db, load_env
+from common import dfs_post, init_db, load_env, supabase_upsert
 from rank_track import HERE, PROPERTIES, read_keywords
 
 # ---- edit these ------------------------------------------------------------
@@ -63,7 +63,7 @@ def chunks(seq, n):
         yield seq[i:i + n]
 
 
-def update_meta(con, prop, keyword, **fields):
+def update_meta(con, prop, keyword, rows, **fields):
     cols = ", ".join(["property", "keyword", *fields])
     marks = ",".join("?" * (2 + len(fields)))
     sets = ", ".join(f"{k}=excluded.{k}" for k in fields)
@@ -71,9 +71,10 @@ def update_meta(con, prop, keyword, **fields):
         f"INSERT INTO keyword_meta({cols}) VALUES ({marks}) "
         f"ON CONFLICT(property, keyword) DO UPDATE SET {sets}",
         (prop, keyword, *fields.values()))
+    rows.append({"property": prop, "keyword": keyword, **fields})
 
 
-def enrich_volumes(con, pairs):
+def enrich_volumes(con, pairs, rows):
     n = 0
     for group in chunks(pairs, CHUNK):
         result = dfs_post("/keywords_data/google_ads/search_volume/live",
@@ -86,7 +87,7 @@ def enrich_volumes(con, pairs):
                 by_kw[it["keyword"].lower()] = it
         for prop, keyword in group:
             it = by_kw.get(keyword.lower()) or {}
-            update_meta(con, prop, keyword,
+            update_meta(con, prop, keyword, rows,
                         volume=it.get("search_volume"),
                         cpc=it.get("cpc"))
         n += len(group)
@@ -94,7 +95,7 @@ def enrich_volumes(con, pairs):
     return n
 
 
-def enrich_difficulty(con, pairs):
+def enrich_difficulty(con, pairs, rows):
     n = 0
     for group in chunks(pairs, CHUNK):
         result = dfs_post("/dataforseo_labs/google/bulk_keyword_difficulty/live",
@@ -107,7 +108,7 @@ def enrich_difficulty(con, pairs):
                 by_kw[it["keyword"].lower()] = it
         for prop, keyword in group:
             it = by_kw.get(keyword.lower()) or {}
-            update_meta(con, prop, keyword,
+            update_meta(con, prop, keyword, rows,
                         kd=it.get("keyword_difficulty"))
         n += len(group)
         time.sleep(DELAY_SECONDS)
@@ -118,7 +119,7 @@ INTENT_LABELS = {"informational": "informational", "navigational": "navigational
                  "commercial": "commercial", "transactional": "transactional"}
 
 
-def enrich_intent(con, pairs):
+def enrich_intent(con, pairs, rows):
     n = 0
     for group in chunks(pairs, CHUNK):
         result = dfs_post("/dataforseo_labs/google/search_intent/live",
@@ -133,7 +134,7 @@ def enrich_intent(con, pairs):
             it = by_kw.get(keyword.lower()) or {}
             label = ((it.get("keyword_intent") or {}).get("label") or "").lower()
             intent = {INTENT_LABELS[label]: True} if label in INTENT_LABELS else {}
-            update_meta(con, prop, keyword, intent=json.dumps(intent))
+            update_meta(con, prop, keyword, rows, intent=json.dumps(intent))
         n += len(group)
         time.sleep(DELAY_SECONDS)
     return n
@@ -164,14 +165,19 @@ def main():
 
     load_env()
     today = date.today().isoformat()
-    n = enrich_volumes(con, pairs)
+    meta_rows = []
+    n = enrich_volumes(con, pairs, meta_rows)
     print(f"volumes: {n} keywords updated")
-    n = enrich_difficulty(con, pairs)
+    supabase_upsert("keyword_meta", meta_rows)
+    n = enrich_difficulty(con, pairs, meta_rows)
     print(f"difficulty: {n} keywords updated")
-    n = enrich_intent(con, pairs)
+    supabase_upsert("keyword_meta", meta_rows)
+    n = enrich_intent(con, pairs, meta_rows)
     print(f"intent: {n} keywords updated")
+    supabase_upsert("keyword_meta", meta_rows)
     con.execute("INSERT OR REPLACE INTO enrich_log VALUES (?)", (today,))
     con.commit()
+    supabase_upsert("enrich_log", [{"day": today}])
     print(f"keyword_meta refreshed for {len(pairs)} keywords "
           f"({len(PROPERTIES)} properties)")
 

@@ -37,7 +37,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-from common import DB_PATH, init_db
+from common import DB_PATH, init_db, supabase_upsert
 
 HERE = Path(__file__).parent
 CONFIG = HERE / "freshness_sitemaps.csv"
@@ -806,6 +806,7 @@ def run(args):
         )
         con.commit()
         print(f"\nWrote {len(all_rows)} rows to freshness_scores for {day}")
+        supabase_upsert("freshness_scores", all_rows)
 
     con.close()
 

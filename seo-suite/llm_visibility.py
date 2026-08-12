@@ -21,7 +21,7 @@ import time
 from datetime import date
 from pathlib import Path
 
-from common import DB_PATH, dfs_post, init_db, load_env
+from common import DB_PATH, dfs_post, init_db, load_env, supabase_upsert
 
 HERE = Path(__file__).parent
 PROMPTS_CSV = HERE / "prompts.csv"
@@ -133,6 +133,7 @@ def main():
     load_env()
     today = date.today().isoformat()
     done = 0
+    rows = []
     for prompt in prompts:
         for platform in PLATFORMS:
             try:
@@ -146,12 +147,22 @@ def main():
                         (today, platform, prompt, json.dumps(mentions),
                          int(cited), json.dumps(links), answer))
             con.commit()
+            rows.append({
+                "day": today,
+                "platform": platform,
+                "prompt": prompt,
+                "mentions": json.dumps(mentions),
+                "cited_mine": int(cited),
+                "links": json.dumps(links),
+                "answer": answer,
+            })
             done += 1
             found = " ".join(b for b, m in mentions.items() if m) or "—"
             print(f"[{done}/{total}] {platform:11s} {prompt[:45]:45s} "
                   f"mentions: {found}{'  +CITED' if cited else ''}")
             time.sleep(DELAY_SECONDS)
     print(f"\nSaved {done}/{total} results to {DB_PATH.name}")
+    supabase_upsert("llm_snapshots", rows)
     report(con)
 
 
