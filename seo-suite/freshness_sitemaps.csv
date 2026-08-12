@@ -1,0 +1,5 @@
+# property,page_type,sitemap_url
+# The freshness collector parses sitemap indexes recursively.
+vantagecircle,page,https://www.vantagecircle.com/pages-sitemap.xml
+vantagecircle,blog,https://www.vantagecircle.com/en/blog/sitemap.xml
+vantagefit,page,https://www.vantagefit.io/sitemap-0.xml

@@ -36,6 +36,19 @@ jobs:
       - name: Track competitor sitemap/page changes
         run: python3 competitor_tracker.py
 
+      - name: Monthly gate (run freshness on 1st of month or manual)
+        id: monthly
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$(date +%d)" = "01" ]; then
+            echo "run=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Content freshness / decay monitor
+        if: steps.monthly.outputs.run == '1'
+        run: python3 freshness.py
+
       - name: Biweekly gate (run LLM tracker on even ISO weeks only)
         id: gate
         run: echo "run=$(( $(date +%V) % 2 == 0 ))" >> "$GITHUB_OUTPUT"
