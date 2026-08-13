@@ -24,9 +24,8 @@ jobs:
       - name: Prepare public folder
         run: |
           rm -rf public
-          mkdir -p public/functions/api
+          mkdir -p public
           cp index.html dashboard.js dashboard.css public/
-          cp functions/api/*.js public/functions/api/
 
       - name: Ensure Cloudflare Pages project exists
         uses: cloudflare/wrangler-action@v3
