@@ -1,0 +1,1082 @@
+(function () {
+  'use strict';
+
+  const PROPERTIES = {
+    vantagecircle: { label: 'Vantage Circle', domain: 'vantagecircle.com' },
+    vantagefit: { label: 'Vantage Fit', domain: 'vantagefit.io' },
+  };
+  const YOU = 'vantage circle';
+  const BRANDS = ['vantage circle', 'bonusly', 'kudos', 'achievers', 'awardco', 'nectar', 'motivosity', 'o.c. tanner', 'workhuman'];
+  const NOT_FOUND = 101;
+  const INTENT_SHORT = { informational: 'info', navigational: 'nav', commercial: 'com', transactional: 'trans' };
+  const COMPETITOR_TYPES = [
+    ['', 'All types'],
+    ['new_page', 'New page'],
+    ['content_update', 'Content update'],
+    ['title_change', 'Title change'],
+    ['meta_change', 'Meta change'],
+    ['h1_change', 'H1 change'],
+    ['schema_change', 'Schema change'],
+    ['redirect', 'Redirect'],
+    ['page_removed', 'Page removed'],
+    ['url_case_change', 'URL case change'],
+  ];
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function fmtNum(n) {
+    if (n === null || n === undefined || n === '') return '';
+    return Number(n).toLocaleString();
+  }
+
+  function fmtPos(pos) {
+    if (pos === null || pos === undefined || pos >= NOT_FOUND) return '—';
+    return String(pos);
+  }
+
+  function intentHtml(intentJson) {
+    let flags = {};
+    try { flags = JSON.parse(intentJson || '{}'); } catch (e) {}
+    const labels = [];
+    for (const [name, short] of Object.entries(INTENT_SHORT)) {
+      if (flags[name]) labels.push(short);
+    }
+    if (!labels.length) return '<td class="sub">—</td>';
+    return '<td>' + labels.map(function (l) { return '<span class="feat-chip">' + esc(l) + '</span>'; }).join(' ') + '</td>';
+  }
+
+  function featuresHtml(featuresJson) {
+    let feats = [];
+    try { feats = JSON.parse(featuresJson || '[]') || []; } catch (e) {}
+    if (!feats.length) return '<td class="sub">—</td>';
+    const shown = feats.slice(0, 4).map(function (f) { return '<span class="feat-chip">' + esc(f) + '</span>'; }).join('');
+    const more = feats.length > 4 ? '<span class="sub">+' + (feats.length - 4) + '</span>' : '';
+    return '<td>' + shown + more + '</td>';
+  }
+
+  function posCell(prev, cur, hasPrev) {
+    const curS = fmtPos(cur);
+    if (!hasPrev) return { html: '<td class="num"><b>' + curS + '</b></td>', change: '' };
+    if (prev === null && cur === null) return { html: '<td class="num">—</td>', change: '' };
+    if (prev === null) {
+      return { html: '<td class="num"><b>' + curS + '</b> <span class="pos-chip new">New</span></td>', change: String(NOT_FOUND - cur) };
+    }
+    if (cur === null) {
+      return { html: '<td class="num">— <span class="sub">from ' + prev + '</span> <span class="pos-chip down">out</span></td>', change: String(prev - NOT_FOUND) };
+    }
+    const d = prev - cur;
+    let chip;
+    if (d > 0) chip = '<span class="pos-chip up">▲' + d + '</span>';
+    else if (d < 0) chip = '<span class="pos-chip down">▼' + Math.abs(d) + '</span>';
+    else chip = '<span class="pos-chip flat">·</span>';
+    const prevS = d ? ' <span class="sub">from ' + prev + '</span>' : '';
+    return { html: '<td class="num"><b>' + curS + '</b>' + prevS + ' ' + chip + '</td>', change: String(d) };
+  }
+
+  function trafficCell(cur, prev) {
+    if (cur === null || cur === undefined) return { html: '<td class="num sub">—</td>', val: '' };
+    const curS = fmtNum(Math.round(cur));
+    if (prev === null || prev === undefined) return { html: '<td class="num">' + curS + '</td>', val: String(cur) };
+    const d = cur - prev;
+    let delta = '';
+    if (d > 0) delta = ' <span class="delta up">+' + fmtNum(Math.round(d)) + '</span>';
+    else if (d < 0) delta = ' <span class="delta down">' + fmtNum(Math.round(d)) + '</span>';
+    return { html: '<td class="num">' + curS + delta + '</td>', val: String(cur) };
+  }
+
+  async function api(path) {
+    const res = await fetch('/api/' + path);
+    if (!res.ok) {
+      const text = await res.text().catch(function () { return 'unknown error'; });
+      throw new Error(res.status + ' ' + text);
+    }
+    return res.json();
+  }
+
+  function errorCard(message) {
+    return '<div class="card" style="color:var(--rose)"><b>Error</b><p class="sub">' + esc(message) + '</p></div>';
+  }
+
+  // ---------------------------------------------------------------- summary
+  async function loadSummary() {
+    const el = document.getElementById('panel-summary');
+    try {
+      const data = await api('summary');
+      const cards = [];
+
+      // rank KPIs across properties
+      let totalRanked = 0, totalTop3 = 0, totalTop10 = 0, totalTop50 = 0, totalCount = 0;
+      let latestDay = '';
+      for (const [prop, info] of Object.entries(data.rank || {})) {
+        totalRanked += info.ranked || 0;
+        totalTop3 += info.top3 || 0;
+        totalTop10 += info.top10 || 0;
+        totalTop50 += info.top50 || 0;
+        totalCount += info.count || 0;
+        if (info.latest_day && info.latest_day > latestDay) latestDay = info.latest_day;
+      }
+      if (totalCount) {
+        cards.push([
+          esc(String(totalTop3)),
+          'keywords in Google top 3<br>' + esc(String(totalTop10)) + ' in top 10 · ' + esc(String(totalTop50)) + ' in top 50<br><span class="sub">' + esc(String(totalRanked)) + '/' + esc(String(totalCount)) + ' ranked' + (latestDay ? ' (' + esc(latestDay) + ')' : '') + '</span>'
+        ]);
+      }
+
+      if (data.biggest_mover) {
+        const m = data.biggest_mover;
+        const cls = m.delta > 0 ? 'up' : 'down';
+        const arrow = m.delta > 0 ? '▲' : '▼';
+        cards.push([
+          '<span class="delta ' + cls + '">' + arrow + Math.abs(m.delta) + '</span>',
+          'biggest rank move vs previous check<br>' + esc((m.keyword || '').slice(0, 60)) + '<br><span class="sub">' + esc(PROPERTIES[m.property]?.label || m.property) + '</span>'
+        ]);
+      }
+
+      if (data.backlinks?.latest) {
+        const bl = data.backlinks.latest;
+        const prev = data.backlinks.previous;
+        let delta = '<span class="sub">first run</span>';
+        if (prev) {
+          const net = (bl.refdomains || 0) - (prev.refdomains || 0);
+          const cls = net >= 0 ? 'up' : 'down';
+          const arrow = net >= 0 ? '+' : '-';
+          delta = '<span class="delta ' + cls + '">' + arrow + esc(fmtNum(Math.abs(net))) + ' vs ' + esc(prev.day) + '</span>';
+        }
+        cards.push([esc(fmtNum(bl.refdomains)), 'referring domains<br>' + delta]);
+      }
+
+      if (data.llm?.day) {
+        cards.push([
+          esc(String(data.llm.sov) + '%'),
+          'AI share of voice<br><span class="sub">' + esc(data.llm.day) + ' · ' + esc(String(data.llm.count)) + ' answers</span>'
+        ]);
+      }
+
+      if (!cards.length) {
+        el.innerHTML = '<div class="card">No summary data available yet.</div>';
+        return;
+      }
+
+      const kpiHtml = cards.map(function (c) {
+        return '<div class="kpi"><div class="num">' + c[0] + '</div><div class="label">' + c[1] + '</div></div>';
+      }).join('');
+
+      el.innerHTML = '<h2>Executive summary</h2><div class="kpis">' + kpiHtml + '</div>';
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  // ---------------------------------------------------------------- rank tracker
+  function renderRankProp(data) {
+    const cfg = PROPERTIES[data.property] || { label: data.property, domain: data.property };
+    const tags = (data.meta && data.meta.tags) ? data.meta.tags : [];
+    const tagOptions = tags.map(function (t) { return '<option value="' + esc(t.toLowerCase()) + '">' + esc(t) + '</option>'; }).join('');
+
+    const rows = data.keywords.map(function (k) {
+      const hasPrev = data.previous_day !== null && k.previous_position !== undefined;
+      const pos = posCell(k.previous_position, k.position, hasPrev);
+      const traffic = trafficCell(k.traffic_cur, k.traffic_prev);
+      const shortUrl = (k.url || '').replace(/^https?:\/\//, '').slice(0, 50);
+      const vol = k.volume;
+      const kd = k.kd;
+      return '<tr data-keyword="' + esc((k.keyword || '').toLowerCase()) + '" ' +
+        'data-search="' + esc(((k.keyword || '') + ' ' + (k.tag || '')).toLowerCase()) + '" ' +
+        'data-tag="' + esc((k.tag || '').toLowerCase()) + '" ' +
+        'data-position="' + (k.position === null ? '' : esc(String(k.position))) + '" ' +
+        'data-change="' + esc(pos.change) + '" ' +
+        'data-volume="' + (vol === null || vol === undefined ? '' : esc(String(vol))) + '" ' +
+        'data-traffic="' + esc(traffic.val) + '" ' +
+        'data-kd="' + (kd === null || kd === undefined ? '' : esc(String(kd))) + '">' +
+        '<td>' + esc(k.keyword) + '</td>' +
+        '<td class="tag-cell">' + esc(k.tag) + '</td>' +
+        pos.html +
+        '<td class="num">' + (vol !== null && vol !== undefined ? fmtNum(vol) : '<span class="sub">—</span>') + '</td>' +
+        traffic.html +
+        '<td class="num">' + (kd !== null && kd !== undefined ? Math.round(kd) : '<span class="sub">—</span>') + '</td>' +
+        intentHtml(k.intent) +
+        '<td>' + (k.branded ? '<span class="badge-b">B</span>' : '') + '</td>' +
+        featuresHtml(k.serp_features) +
+        '<td class="sub">' + esc(shortUrl) + '</td></tr>';
+    }).join('');
+
+    return '<div class="rank-prop" id="rank-' + esc(data.property) + '">' +
+      '<div class="card">' +
+      '<div class="table-tools no-print">' +
+      '<input class="rank-search" type="search" placeholder="Search keywords or tags…">' +
+      '<select class="tag-filter"><option value="">All tags</option>' + tagOptions + '<option value="__untagged__">Untagged</option></select>' +
+      '<span class="rank-count sub">' + esc(String(data.keywords.length)) + ' keywords</span></div>' +
+      '<table class="rank-table"><thead><tr>' +
+      '<th class="sortable" data-sort="keyword">Keyword <span class="arrow"></span></th>' +
+      '<th>Tag</th>' +
+      '<th class="sortable" data-sort="position">Position <span class="arrow"></span></th>' +
+      '<th class="sortable" data-sort="volume">Volume <span class="arrow"></span></th>' +
+      '<th class="sortable" data-sort="traffic">Traffic <span class="arrow"></span></th>' +
+      '<th class="sortable" data-sort="kd">KD <span class="arrow"></span></th>' +
+      '<th>Intent</th><th>Branded</th><th>SERP features</th><th>URL</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<p class="sub">Google US top 100 for ' + esc(cfg.domain) + ' — current: ' + esc(data.latest_day || '—') +
+      (data.previous_day ? ', previous: ' + esc(data.previous_day) : '') +
+      '. Volume / traffic / KD / intent from keyword_meta. — = unranked or no data. ' +
+      '<span class="no-print">Type to filter, pick a tag, click a column header to sort.</span></p>' +
+      '</div></div>';
+  }
+
+  async function loadRank() {
+    const el = document.getElementById('panel-rank');
+    try {
+      const [circle, fit] = await Promise.all([
+        api('rank?property=vantagecircle'),
+        api('rank?property=vantagefit'),
+      ]);
+
+      const tabs = [
+        { key: 'vantagecircle', label: 'Vantage Circle', data: circle },
+        { key: 'vantagefit', label: 'Vantage Fit', data: fit },
+      ];
+
+      const anyData = tabs.some(function (t) { return t.data.keywords && t.data.keywords.length; });
+      if (!anyData) {
+        el.innerHTML = '<div class="card">No rank data available yet.</div>';
+        return;
+      }
+
+      const tabHtml = '<div class="prop-tabs no-print">' + tabs.map(function (t, i) {
+        return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-prop="' + esc(t.key) + '">' + esc(t.label) + '</button>';
+      }).join('') + '</div>';
+
+      const panelsHtml = tabs.map(function (t, i) {
+        return renderRankProp(t.data).replace('class="rank-prop"', 'class="rank-prop' + (i === 0 ? ' active' : '') + '"');
+      }).join('');
+
+      el.innerHTML = '<h2>Rank Tracker · Google US top 100</h2>' + tabHtml + panelsHtml;
+      initPropTabs(el, 'rank-prop');
+      initRankInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  // ---------------------------------------------------------------- backlinks
+  async function loadBacklinks() {
+    const el = document.getElementById('panel-backlinks');
+    try {
+      const data = await api('backlinks');
+      const snaps = data.snapshots || [];
+      const events = data.events || [];
+
+      let html = '<h2>Backlinks</h2>';
+      if (!snaps.length) {
+        html += '<div class="card">No backlink data available yet.</div>';
+        el.innerHTML = html;
+        return;
+      }
+
+      const mx = Math.max.apply(null, snaps.map(function (r) { return r.refdomains || 0; }).concat([1]));
+      const snapRows = snaps.map(function (r) {
+        return '<tr><td><b>' + esc(r.day) + '</b></td>' +
+          '<td class="vol">' + fmtNum(r.backlinks) + '</td>' +
+          '<td class="vol">' + fmtNum(r.refdomains) + '</td>' +
+          '<td><div class="bar"><div style="width:' + ((r.refdomains || 0) / mx * 100).toFixed(0) + '%"></div></div></td>' +
+          '<td>' + esc(r.rank) + '</td></tr>';
+      }).join('');
+
+      html += '<div class="card"><b>Profile totals</b><table>' +
+        '<tr><th>date</th><th>backlinks</th><th>refdomains</th><th></th><th>DFS rank</th></tr>' +
+        snapRows + '</table></div>';
+
+      if (events.length) {
+        const eventRows = events.slice(0, 40).map(function (r) {
+          const chip = r.event === 'new' ? '<span class="chip you">new</span>' : '<span class="chip none">lost</span>';
+          if (r.domain === '(total)') {
+            return '<tr><td>' + esc(r.day) + '</td><td>' + chip + '</td><td class="sub">API aggregate count</td><td class="vol">' + esc(r.rank) + '</td></tr>';
+          }
+          return '<tr><td>' + esc(r.day) + '</td><td>' + chip + '</td><td>' + esc(r.domain) + '</td><td class="vol">' + (r.rank !== null && r.rank !== undefined ? esc(String(r.rank)) : '—') + '</td></tr>';
+        }).join('');
+        html += '<div class="card"><b>Recent new / lost referring domains</b><table>' +
+          '<tr><th>date</th><th>event</th><th>domain</th><th>rank</th></tr>' + eventRows + '</table>' +
+          '<p class="sub">Weekly API runs record aggregate counts; per-domain detail comes from the one-time Ahrefs import.</p></div>';
+      }
+
+      el.innerHTML = html;
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  // ---------------------------------------------------------------- LLM visibility
+  function brandChips(mentionsJson) {
+    let m = {};
+    try { m = JSON.parse(mentionsJson || '{}'); } catch (e) {}
+    const found = BRANDS.filter(function (b) { return m[b]; });
+    if (!found.length) return '<span class="chip none">no brands</span>';
+    return found.map(function (b) { return '<span class="chip ' + (b === YOU ? 'you' : '') + '">' + esc(b) + '</span>'; }).join(' ');
+  }
+
+  async function loadLLM() {
+    const el = document.getElementById('panel-llm');
+    try {
+      const data = await api('llm');
+      let html = '';
+
+      // SOV trend
+      if (data.trend && data.trend.length) {
+        const head = BRANDS.map(function (b) { return '<th>' + esc(b) + (b === YOU ? ' (you)' : '') + '</th>'; }).join('');
+        const body = data.trend.map(function (row) {
+          const cells = BRANDS.map(function (b) {
+            const got = row[b] || 0;
+            const total = row.total || 1;
+            const pct = total ? Math.round((got / total) * 100) : 0;
+            const cls = b === YOU ? 'bar you' : 'bar';
+            return '<td><div class="' + cls + '"><div style="width:' + pct + '%"></div></div><span class="sub">' + pct + '%</span></td>';
+          }).join('');
+          return '<tr><td><b>' + esc(row.day) + '</b></td>' + cells + '</tr>';
+        }).join('');
+        html += '<h2>AI share of voice trend</h2><div class="card"><table><tr><th>run date</th>' + head + '</tr>' + body + '</table>' +
+          '<p class="sub">% of prompt × platform answers mentioning each brand.</p></div>';
+      }
+
+      // Volumes
+      if (data.volumes && data.volumes.length) {
+        const rows = data.volumes.map(function (r) {
+          let spark = '';
+          try {
+            const months = JSON.parse(r.trend_json || '[]');
+            const vals = months.slice(-12).map(function (m) { return m.ai_search_volume || 0; });
+            const mx = Math.max.apply(null, vals.concat([1]));
+            spark = '<span class="spark">' + vals.map(function (v) { return '<i style="height:' + Math.max(1, Math.round(v / mx * 18)) + 'px"></i>'; }).join('') + '</span>';
+          } catch (e) { spark = '<span class="sub">—</span>'; }
+          return '<tr><td>' + esc(r.keyword) + '</td><td class="vol">' + fmtNum(r.ai_search_volume) + '</td><td>' + spark + '</td></tr>';
+        }).join('');
+        html += '<h2>AI search volume — your seed keywords</h2><div class="card"><table>' +
+          '<tr><th>keyword</th><th>AI searches/mo</th><th>12-month trend</th></tr>' + rows + '</table>' +
+          '<p class="sub">How often each phrase is typed into AI tools per month (US). Updated monthly.</p></div>';
+      }
+
+      // Discovered prompts
+      if (data.discovered && data.discovered.length) {
+        const rows = data.discovered.map(function (r) {
+          return '<tr><td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
+            '<td class="vol">' + fmtNum(r.ai_search_volume) + '</td></tr>';
+        }).join('');
+        html += '<h2>Discovered prompts — what people really ask AI</h2><div class="card"><table>' +
+          '<tr><th>question</th><th>platform</th><th>AI searches/mo</th></tr>' + rows + '</table>' +
+          '<p class="sub">Real user questions from the LLM Mentions database matched to your seeds.</p></div>';
+      }
+
+      // Silent citations
+      if (data.silent && data.silent.rows && data.silent.rows.length) {
+        const trend = data.silent.previous_count ? ' · was ' + fmtNum(data.silent.previous_count) + ' at previous check' : '';
+        const rows = data.silent.rows.map(function (r) {
+          return '<tr><td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
+            '<td class="vol">' + fmtNum(r.ai_search_volume) + '</td></tr>';
+        }).join('');
+        html += '<h2>Silent citations — your content, no brand credit <span class="sub">(' + esc(String(data.silent.count)) + ' found' + esc(trend) + ')</span></h2>' +
+          '<div class="card"><table><tr><th>query</th><th>platform</th><th>AI searches/mo</th></tr>' + rows + '</table>' +
+          '<p class="sub">AI answers that cite vantagecircle.com as a source but never name your brand. Checked monthly.</p></div>';
+      }
+
+      // Latest run
+      if (data.by_prompt && Object.keys(data.by_prompt).length) {
+        html += '<h2>Latest LLM run — ' + esc(data.latest_day || '—') + '</h2>';
+        for (const [prompt, entries] of Object.entries(data.by_prompt)) {
+          const chips = entries.map(function (e) {
+            return '<div><span class="plat">' + esc(e.platform) + '</span> ' + brandChips(e.mentions) +
+              (e.cited_mine ? ' <span class="chip cite">your site cited</span>' : '') + '</div>';
+          }).join('');
+          const answers = entries.map(function (e) {
+            return '<div><span class="plat">' + esc(e.platform) + '</span></div>' +
+              '<div class="answer">' + esc((e.answer || '').slice(0, 4000)) + '</div>';
+          }).join('');
+          html += '<div class="card"><b>' + esc(prompt) + '</b>' + chips +
+            '<details><summary>show raw answers</summary>' + answers + '</details></div>';
+        }
+      }
+
+      el.innerHTML = html || '<div class="card">No LLM visibility data available yet.</div>';
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  // ---------------------------------------------------------------- freshness
+  function riskChip(risk) {
+    const cls = { LOW: 'you', MEDIUM: 'cite', HIGH: 'none' }[risk] || '';
+    return '<span class="chip ' + cls + '">' + esc(risk) + '</span>';
+  }
+
+  function actionChip(action) {
+    const cls = { UPDATE: 'none', REFRESH: 'cite', EXPAND: 'cite', PRUNE: 'none', FIX: 'none', MONITOR: 'you' }[action] || '';
+    return '<span class="chip ' + cls + '">' + esc(action) + '</span>';
+  }
+
+  async function loadFreshness() {
+    const el = document.getElementById('panel-freshness');
+    try {
+      const data = await api('freshness');
+      const rows = data.rows || [];
+      if (!rows.length) {
+        el.innerHTML = '<h2>Content Freshness</h2><div class="card">No freshness data available yet.</div>';
+        return;
+      }
+
+      const total = rows.length;
+      const highRisk = rows.filter(function (r) { return r.decay_risk === 'HIGH'; }).length;
+      const ages = rows.filter(function (r) { return r.age_days !== null && r.age_days < 9000; }).map(function (r) { return r.age_days; });
+      const avgAge = ages.length ? Math.round(ages.reduce(function (a, b) { return a + b; }, 0) / ages.length) : 0;
+      const actionCounts = {};
+      rows.forEach(function (r) { actionCounts[r.action] = (actionCounts[r.action] || 0) + 1; });
+      const needsAction = Object.entries(actionCounts).filter(function (e) { return e[0] !== 'MONITOR'; }).reduce(function (s, e) { return s + e[1]; }, 0);
+
+      const cards = [
+        ['Pages monitored', fmtNum(total), 'as of ' + esc(data.day || '')],
+        ['High decay risk', fmtNum(highRisk), (total ? (highRisk / total * 100).toFixed(1) : 0) + '% of pages'],
+        ['Average age', fmtNum(avgAge), 'days since last update'],
+        ['Needs action', fmtNum(needsAction), 'refresh/update/prune/fix'],
+      ];
+      const kpiHtml = '<div class="kpis">' + cards.map(function (c) {
+        return '<div class="kpi"><div class="num">' + esc(c[1]) + '</div><div class="label">' + esc(c[0]) + '<br><span class="sub">' + esc(c[2]) + '</span></div></div>';
+      }).join('') + '</div>';
+
+      const candidates = rows.filter(function (r) { return r.action !== 'MONITOR'; }).slice(0, 15);
+      let candidatesHtml = '';
+      if (candidates.length) {
+        const candRows = candidates.map(function (r) {
+          const display = ((r.title || r.url || '').replace(/^https?:\/\//, '')).slice(0, 65);
+          return '<tr><td><a href="' + esc(r.url) + '" target="_blank">' + esc(display) + '</a></td>' +
+            '<td>' + esc(r.property) + '</td><td>' + esc(String(r.age_days)) + '</td>' +
+            '<td>' + actionChip(r.action) + '</td><td>' + esc(String(r.priority_score)) + '</td>' +
+            '<td class="sub">' + esc(r.reason) + '</td></tr>';
+        }).join('');
+        candidatesHtml = '<div class="card"><b>Top action candidates</b><table>' +
+          '<thead><tr><th>Page</th><th>Property</th><th>Age</th><th>Action</th><th>Priority</th><th>Reason</th></tr></thead><tbody>' +
+          candRows + '</tbody></table></div>';
+      }
+
+      const properties = [...new Set(rows.map(function (r) { return r.property; }))].sort();
+      const types = [...new Set(rows.map(function (r) { return r.page_type; }))].sort();
+      const actions = [...new Set(rows.map(function (r) { return r.action; }))].sort();
+      const risks = [...new Set(rows.map(function (r) { return r.decay_risk; }))].sort();
+
+      function opts(list, label) {
+        return '<option value="">All ' + label + '</option>' + list.map(function (x) { return '<option value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('');
+      }
+
+      const tableRows = rows.map(function (r) {
+        const display = ((r.title || r.url || '').replace(/^https?:\/\//, '')).slice(0, 70);
+        const search = [r.url, r.title, r.target_keyword, r.property, r.page_type, r.action, r.reason, r.decay_risk].filter(Boolean).join(' ').toLowerCase();
+        return '<tr data-search="' + esc(search) + '" data-property="' + esc(r.property) + '" data-type="' + esc(r.page_type) + '"' +
+          ' data-action="' + esc(r.action) + '" data-risk="' + esc(r.decay_risk) + '" data-age="' + esc(String(r.age_days)) + '" data-priority="' + esc(String(r.priority_score)) + '"' +
+          ' data-display="' + esc(display.toLowerCase()) + '" data-keyword="' + esc((r.target_keyword || '').toLowerCase()) + '">' +
+          '<td><a href="' + esc(r.url) + '" target="_blank">' + esc(display) + '</a></td>' +
+          '<td>' + esc(r.property) + '</td><td>' + esc(r.page_type) + '</td><td>' + esc(String(r.age_days)) + '</td><td>' + esc(String(r.word_count)) + '</td>' +
+          '<td>' + esc(String(r.freshness_score)) + '</td><td>' + esc(String(r.depth_score)) + '</td><td>' + riskChip(r.decay_risk) + '</td>' +
+          '<td>' + esc(r.target_keyword || '') + '</td><td>' + (r.position && r.position <= 100 ? esc(String(r.position)) : '—') + '</td><td>' + (r.volume ? fmtNum(r.volume) : '—') + '</td>' +
+          '<td>' + actionChip(r.action) + '</td><td class="sub">' + esc(r.reason) + '</td></tr>';
+      }).join('');
+
+      const tableHtml = '<div class="card freshness-wrap">' +
+        '<div class="table-tools no-print freshness-tools">' +
+        '<input class="freshness-search" type="search" placeholder="Search pages…">' +
+        '<select class="freshness-property">' + opts(properties, 'properties') + '</select>' +
+        '<select class="freshness-type">' + opts(types, 'types') + '</select>' +
+        '<select class="freshness-action">' + opts(actions, 'actions') + '</select>' +
+        '<select class="freshness-risk">' + opts(risks, 'risks') + '</select>' +
+        '<span class="freshness-count sub">' + esc(String(total)) + ' pages</span></div>' +
+        '<table class="freshness-table"><thead><tr>' +
+        '<th class="sortable" data-sort="display">Page <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="property">Property <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="type">Type <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="age">Age <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="word_count">Words <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="freshness">Fresh <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="depth">Depth <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="risk">Risk <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="keyword">Keyword <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="position">Pos <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="volume">Vol <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="action">Action <span class="arrow"></span></th>' +
+        '<th>Reason</th>' +
+        '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+
+      el.innerHTML = '<h2>Content Freshness</h2>' + kpiHtml + candidatesHtml + tableHtml;
+      initFreshnessInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  // ---------------------------------------------------------------- competitor tracker
+  function sectionOf(url) {
+    try {
+      const locale = { en: 1, fr: 1, es: 1, de: 1, it: 1, pt: 1, ja: 1, ko: 1, zh: 1, 'en-us': 1, 'en-gb': 1, 'en-au': 1, 'en-in': 1, 'en-ca': 1, 'fr-ca': 1 };
+      let p = new URL(url).pathname.replace(/^\/+/, '').split('/').filter(Boolean);
+      if (p.length > 1 && locale[p[0]]) p.shift();
+      return p[0] || 'home';
+    } catch (e) { return 'other'; }
+  }
+
+  function typeLabel(t, n) {
+    const map = {
+      new_page: ['new page', 'new pages'],
+      content_update: ['content update', 'content updates'],
+      page_removed: ['page removed', 'pages removed'],
+      redirect: ['redirect', 'redirects'],
+      title_change: ['title change', 'title changes'],
+      meta_change: ['meta change', 'meta changes'],
+      h1_change: ['H1 change', 'H1 changes'],
+      schema_change: ['schema change', 'schema changes'],
+      url_case_change: ['URL case change', 'URL case changes']
+    };
+    const pair = map[t] || [t, t + 's'];
+    return pair[n === 1 ? 0 : 1];
+  }
+
+  function renderCompetitorCharts(box, changes, competitors, selfDomain) {
+    var np = changes.filter(function (c) { return c.change_type === 'new_page'; });
+    var counts = {}, colors = ['#4f46e5', '#7c3aed', '#059669', '#d97706', '#dc2626', '#0891b2', '#7c3aed'];
+    np.forEach(function (c) { counts[c.domain] = (counts[c.domain] || 0) + 1; });
+    var sorted = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
+    var max = Math.max.apply(null, Object.values(counts).concat([1]));
+    var html = sorted.map(function (d, i) {
+      return "<div class='comp-hbar'><span class='name'>" + esc(d) + "</span>" +
+        "<div class='track'><div class='fill' style='width:" + (counts[d] / max * 100) + "%;background:" + colors[i % colors.length] + "'></div></div>" +
+        "<b>" + counts[d] + "</b></div>";
+    }).join('');
+    box.querySelector('.chart-new-pages').innerHTML = html || '<p class="sub">No new pages in range.</p>';
+
+    var sections = {}, secTotals = {};
+    np.forEach(function (c) {
+      var s = sectionOf(c.url);
+      secTotals[s] = (secTotals[s] || 0) + 1;
+      sections[c.domain] = sections[c.domain] || {};
+      sections[c.domain][s] = (sections[c.domain][s] || 0) + 1;
+    });
+    var topSections = Object.keys(secTotals).sort(function (a, b) { return secTotals[b] - secTotals[a]; }).slice(0, 6);
+    if (topSections.length) {
+      var rows = Object.keys(sections).sort().map(function (d) {
+        var rowTotal = Object.values(sections[d]).reduce(function (a, b) { return a + b; }, 0);
+        var cells = topSections.map(function (s) { return '<td>' + (sections[d][s] || '<span class="sub">—</span>') + '</td>'; }).join('');
+        return '<tr><td><b>' + esc(d) + '</b></td>' + cells + '<td><b>' + rowTotal + '</b></td></tr>';
+      }).join('');
+      box.querySelector('.chart-sections').innerHTML = "<div class='comp-matrix'><table><thead><tr><th>Competitor</th>" +
+        topSections.map(function (s) { return '<th>/' + esc(s) + '</th>'; }).join('') + "<th>Total</th></tr></thead><tbody>" + rows + "</tbody></table></div>";
+    } else {
+      box.querySelector('.chart-sections').innerHTML = '<p class="sub">No new pages in range.</p>';
+    }
+
+    var words = {};
+    changes.filter(function (c) { return c.change_type === 'content_update' && c.details && c.details.word_count_change; })
+      .forEach(function (c) { words[c.domain] = (words[c.domain] || 0) + c.details.word_count_change; });
+    var wSorted = Object.keys(words).sort(function (a, b) { return Math.abs(words[b]) - Math.abs(words[a]); });
+    var wMax = Math.max.apply(null, Object.values(words).map(Math.abs).concat([1]));
+    box.querySelector('.chart-words').innerHTML = wSorted.map(function (d) {
+      var v = words[d];
+      var color = v >= 0 ? '#059669' : '#dc2626';
+      return "<div class='comp-hbar'><span class='name'>" + esc(d) + "</span>" +
+        "<div class='track'><div class='fill' style='width:" + (Math.abs(v) / wMax * 100) + "%;background:" + color + "'></div></div>" +
+        "<b style='color:" + color + "'>" + (v > 0 ? '+' : '') + v + "</b></div>";
+    }).join('') || '<p class="sub">No content updates in range.</p>';
+
+    var typeCounts = {};
+    changes.forEach(function (c) { typeCounts[c.change_type] = (typeCounts[c.change_type] || 0) + 1; });
+    var tSorted = Object.keys(typeCounts).sort(function (a, b) { return typeCounts[b] - typeCounts[a]; });
+    var tMax = Math.max.apply(null, Object.values(typeCounts).concat([1]));
+    var tColors = { new_page: '#059669', content_update: '#d97706', title_change: '#4f46e5', meta_change: '#7c3aed', h1_change: '#db2777', schema_change: '#0891b2', redirect: '#ea580c', page_removed: '#dc2626', url_case_change: '#6b7280' };
+    box.querySelector('.chart-types').innerHTML = tSorted.map(function (t) {
+      return "<div class='comp-hbar'><span class='name'>" + typeLabel(t, 2) + "</span>" +
+        "<div class='track'><div class='fill' style='width:" + (typeCounts[t] / tMax * 100) + "%;background:" + (tColors[t] || '#4f46e5') + "'></div></div>" +
+        "<b>" + typeCounts[t] + "</b></div>";
+    }).join('') || '<p class="sub">No changes in range.</p>';
+
+    var weeks = {};
+    changes.forEach(function (c) {
+      var d = new Date(c.timestamp);
+      var y = d.getFullYear();
+      var w = Math.floor((d - new Date(y, 0, 0)) / 604800000);
+      var key = y + '-W' + w;
+      weeks[key] = weeks[key] || { new_page: 0, content_update: 0, other: 0, total: 0 };
+      if (c.change_type === 'new_page') weeks[key].new_page++;
+      else if (c.change_type === 'content_update') weeks[key].content_update++;
+      else weeks[key].other++;
+      weeks[key].total++;
+    });
+    var wKeys = Object.keys(weeks).sort().slice(-12);
+    var wMax = Math.max.apply(null, wKeys.map(function (k) { return weeks[k].total; }).concat([1]));
+    box.querySelector('.chart-trend').innerHTML = wKeys.map(function (k) {
+      var w = weeks[k];
+      return "<div class='comp-hbar'><span class='name'>" + k + "</span>" +
+        "<div class='track'><div class='fill' style='width:" + (w.total / wMax * 100) + "%;background:linear-gradient(90deg,#059669 0%,#059669 " + (w.new_page / w.total * 100) + "%,#d97706 " + (w.new_page / w.total * 100) + "%,#d97706 " + ((w.new_page + w.content_update) / w.total * 100) + "%,#4f46e5 100%)'></div></div>" +
+        "<b>" + w.total + "</b></div>";
+    }).join('') || '<p class="sub">No weekly data yet.</p>';
+  }
+
+  function renderTimelineList(changes, compact) {
+    if (!changes.length) return '<p class="sub">No changes match the selected filters.</p>';
+    var groups = [];
+    changes.forEach(function (c) {
+      var day = new Date(c.timestamp).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+      var last = groups[groups.length - 1];
+      if (!last || last.day !== day || last.domain !== c.domain) {
+        groups.push({ day: day, domain: c.domain, competitor: c.competitor, items: [] });
+      }
+      last = groups[groups.length - 1];
+      last.items.push(c);
+    });
+    var html = '', lastDay = '';
+    groups.forEach(function (g) {
+      if (g.day !== lastDay) { html += "<div class='comp-day'>" + esc(g.day) + "</div>"; lastDay = g.day; }
+      var counts = {};
+      g.items.forEach(function (c) { counts[c.change_type] = (counts[c.change_type] || 0) + 1; });
+      var summary = Object.entries(counts).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) {
+        return e[1] + ' ' + typeLabel(e[0], e[1]);
+      }).join(' · ');
+      html += "<div class='comp-group'>" +
+        "<div class='comp-group-head' onclick=\"this.parentElement.classList.toggle('open')\">" +
+        "<span class='comp-group-name'>" + esc(g.competitor) + "</span>" +
+        "<span class='comp-group-summary'>" + esc(summary) + "</span></div>" +
+        "<div class='comp-group-items'>" + g.items.map(function (c) { return renderChangeRow(c, compact); }).join('') + "</div></div>";
+    });
+    return html;
+  }
+
+  function renderChangeRow(c, compact) {
+    var det = c.details || {};
+    var tags = '';
+    if (det.word_count_change) {
+      tags += "<span class='comp-seo-tag " + (det.word_count_change > 0 ? 'up' : 'down') + "'>" + (det.word_count_change > 0 ? '+' : '') + det.word_count_change + "w</span>";
+    } else if (c.change_type === 'new_page' && det.word_count) {
+      tags += "<span class='comp-seo-tag'>" + fmtNum(det.word_count) + "w</span>";
+    } else if (c.change_type === 'redirect' && det.status_code) {
+      tags += "<span class='comp-seo-tag'>" + esc(det.status_code) + "</span>";
+    }
+    var detailHtml = '';
+    if (!compact) {
+      var parts = [];
+      if (det.old_title && det.new_title) parts.push('Title: "' + esc(det.old_title) + '" → "' + esc(det.new_title) + '"');
+      if (det.old_meta && det.new_meta) parts.push('Meta: "' + esc(det.old_meta) + '" → "' + esc(det.new_meta) + '"');
+      if (det.old_h1 && det.new_h1) parts.push('H1: "' + esc(det.old_h1) + '" → "' + esc(det.new_h1) + '"');
+      if (det.redirect && det.redirect_to) parts.push('Redirect → <a href="' + esc(det.redirect_to) + '" target="_blank">' + esc(det.redirect_to) + '</a>');
+      if (det.added && det.added.length) parts.push('<div style="color:#059669"><b>+ added</b><br>' + det.added.map(esc).join('<br>') + '</div>');
+      if (det.removed && det.removed.length) parts.push('<div style="color:#dc2626"><b>- removed</b><br>' + det.removed.map(esc).join('<br>') + '</div>');
+      if (parts.length) detailHtml = "<div class='comp-row-detail'>" + parts.join('<br>') + "</div>";
+    }
+    return "<div>" +
+      "<div class='comp-row' onclick=\"this.nextElementSibling.classList.toggle('open')\">" +
+      "<span class='comp-badge " + c.change_type + "'>" + typeLabel(c.change_type, 1) + "</span>" +
+      "<span style='flex:1'>" + esc(c.title || c.url) + "</span>" +
+      "<span class='sub'>" + esc(sectionOf(c.url)) + "</span>" + tags + "</div>" +
+      detailHtml + "</div>";
+  }
+
+  function renderCompetitorPanel(box) {
+    var data = JSON.parse(box.getAttribute('data-competitor-json') || '{}');
+    var changes = data.changes || [];
+    var competitors = data.competitors || {};
+    var selfDomain = data.self_domain || '';
+    var days = parseInt(box.querySelector('.comp-days').value, 10) || 30;
+
+    function inRange(ts, d) {
+      if (d === 0) return true;
+      var now = new Date(); now.setHours(0, 0, 0, 0);
+      var then = new Date(ts);
+      return then >= new Date(now.getTime() - d * 86400000);
+    }
+
+    var filtered = changes.filter(function (c) { return inRange(c.timestamp, days); });
+    var compFilter = box.querySelector('.comp-filter-competitor');
+    var typeFilter = box.querySelector('.comp-filter-type');
+    if (compFilter && compFilter.value) filtered = filtered.filter(function (c) { return c.domain === compFilter.value; });
+    if (typeFilter && typeFilter.value) filtered = filtered.filter(function (c) { return c.change_type === typeFilter.value; });
+
+    var totalPages = Object.values(competitors).reduce(function (s, d) { return s + (d.total_urls || 0); }, 0);
+    var selfNew = filtered.filter(function (c) { return c.change_type === 'new_page' && c.domain === selfDomain; }).length;
+    var rivalDomains = Object.keys(competitors).filter(function (d) { return d !== selfDomain; });
+    var rivalNew = filtered.filter(function (c) { return c.change_type === 'new_page' && c.domain !== selfDomain; }).length;
+    var rivalAvg = rivalDomains.length ? Math.round(rivalNew / rivalDomains.length) : 0;
+    var kpis = box.querySelector('.comp-kpis');
+    kpis.innerHTML = [
+      "<div class='comp-kpi'><div class='num'>" + Object.keys(competitors).length + "</div><div class='label'>Tracked competitors</div></div>",
+      "<div class='comp-kpi'><div class='num'>" + fmtNum(totalPages) + "</div><div class='label'>Pages indexed</div></div>",
+      "<div class='comp-kpi'><div class='num'>" + filtered.filter(function (c) { return c.change_type === 'new_page'; }).length + "</div><div class='label'>New pages</div></div>",
+      "<div class='comp-kpi'><div class='num'>" + filtered.filter(function (c) { return c.change_type === 'content_update'; }).length + "</div><div class='label'>Content updates</div></div>",
+      "<div class='comp-kpi'><div class='num'>" + filtered.length + "</div><div class='label'>All changes</div></div>",
+      "<div class='comp-kpi'><div class='num' style='color:" + (selfNew >= rivalAvg ? '#059669' : '#dc2626') + "'>" + selfNew + " : " + rivalAvg + "</div><div class='label'>You vs rival avg</div></div>"
+    ].join('');
+
+    var maxPages = Math.max.apply(null, Object.values(competitors).map(function (d) { return d.total_urls || 0; }).concat([1]));
+    var cards = box.querySelector('.comp-cards');
+    cards.innerHTML = Object.entries(competitors).map(function (entry, i) {
+      var domain = entry[0], d = entry[1];
+      var dc = filtered.filter(function (c) { return c.domain === domain; });
+      var secCounts = {};
+      dc.filter(function (c) { return c.change_type === 'new_page'; }).forEach(function (c) {
+        var s = sectionOf(c.url); secCounts[s] = (secCounts[s] || 0) + 1;
+      });
+      var topSec = Object.entries(secCounts).sort(function (a, b) { return b[1] - a[1]; })[0];
+      var color = ['#4f46e5', '#7c3aed', '#059669', '#d97706', '#dc2626', '#0891b2'][i % 6];
+      var isSelf = domain === selfDomain;
+      return "<div class='comp-card" + (isSelf ? ' you' : '') + "'><div class='comp-card-head'><h4>" + esc(d.name || domain) +
+        (isSelf ? "<span class='comp-you-badge'>you</span>" : '') + "</h4><div class='domain'>" + esc(domain) + "</div></div>" +
+        "<div class='row'><span>Pages</span><b>" + fmtNum(d.total_urls || 0) + "</b></div>" +
+        "<div class='row'><span>New</span><b style='color:#059669'>" + dc.filter(function (c) { return c.change_type === 'new_page'; }).length + "</b></div>" +
+        "<div class='row'><span>Updates</span><b style='color:#d97706'>" + dc.filter(function (c) { return c.change_type === 'content_update'; }).length + "</b></div>" +
+        "<div class='row'><span>Total</span><b>" + dc.length + "</b></div>" +
+        "<div class='row'><span>Top section</span><b>" + (topSec ? esc(topSec[0]) + ' (' + topSec[1] + ')' : '—') + "</b></div>" +
+        "<div class='bar'><div style='width:" + ((d.total_urls || 0) / maxPages * 100).toFixed(0) + "%;background:" + color + "'></div></div>";
+    }).join('');
+
+    box.querySelector('.comp-overview-timeline').innerHTML = renderTimelineList(filtered.slice(0, 10), true);
+    box.querySelector('.comp-changes-timeline').innerHTML = renderTimelineList(filtered, false);
+
+    var seo = filtered.filter(function (c) { return ['title_change', 'meta_change', 'h1_change', 'schema_change'].indexOf(c.change_type) > -1; });
+    box.querySelector('.comp-seo-list').innerHTML = seo.slice(0, 200).map(function (c) {
+      var det = c.details || {};
+      var body;
+      if (c.change_type === 'schema_change') {
+        body = (det.added_schemas || []).map(function (s) { return "<span class='comp-seo-tag up'>+" + esc(s) + "</span>"; }).join(' ') +
+          (det.removed_schemas || []).map(function (s) { return "<span class='comp-seo-tag down'>-" + esc(s) + "</span>"; }).join(' ');
+      } else {
+        var oldVal = det.old_title || det.old_meta || det.old_h1 || '';
+        var newVal = det.new_title || det.new_meta || det.new_h1 || '';
+        body = "<div class='sub'>" + esc(oldVal) + "</div><div>→</div><div>" + esc(newVal) + "</div>";
+      }
+      return "<div class='card' style='margin:8px 0;padding:12px 14px'><div style='display:flex;gap:10px;align-items:center;margin-bottom:6px'>" +
+        "<span class='comp-badge " + c.change_type + "'>" + typeLabel(c.change_type, 1) + "</span>" +
+        "<b>" + esc(c.competitor) + "</b> <a href='" + esc(c.url) + "' target='_blank' class='sub'>" + esc(c.title || c.url) + "</a></div>" + body + "</div>";
+    }).join('') || '<p class="sub">No on-page SEO changes in range.</p>';
+
+    renderCompetitorCharts(box, filtered, competitors, selfDomain);
+  }
+
+  function renderCompetitorBox(data) {
+    const cfg = PROPERTIES[data.property] || { label: data.property, domain: data.property };
+    const competitors = data.competitors || {};
+    const compOptions = Object.entries(competitors).sort(function (a, b) { return (a[1].name || a[0]).localeCompare(b[1].name || b[0]); }).map(function (e) {
+      return '<option value="' + esc(e[0]) + '">' + esc(e[1].name || e[0]) + '</option>';
+    }).join('');
+    const typeOptions = COMPETITOR_TYPES.map(function (e) { return '<option value="' + esc(e[0]) + '">' + esc(e[1]) + '</option>'; }).join('');
+    const lastRun = data.changes && data.changes.length ? data.changes[0].timestamp.slice(0, 19).replace('T', ' ') + ' UTC' : '—';
+    const payload = esc(JSON.stringify({ property: data.property, self_domain: data.self_domain, competitors: competitors, changes: data.changes || [] }));
+
+    return '<div class="competitor-box" data-competitor-json="' + payload + '">' +
+      '<div class="comp-tabs no-print">' +
+      '<button class="comp-tab active" data-tab="overview">Overview</button>' +
+      '<button class="comp-tab" data-tab="changes">Changes</button>' +
+      '<button class="comp-tab" data-tab="seo">SEO Moves</button>' +
+      '<button class="comp-tab" data-tab="activity">Activity</button>' +
+      '<button class="comp-export">Export CSV</button></div>' +
+      '<div class="comp-panel active" data-tab="overview">' +
+      '<div class="comp-kpis"></div>' +
+      '<div class="comp-cards"></div>' +
+      '<h4 style="margin-top:20px">Recent changes</h4>' +
+      '<div class="comp-overview-timeline comp-timeline"></div></div>' +
+      '<div class="comp-panel" data-tab="changes">' +
+      '<div class="comp-filters no-print">' +
+      '<select class="comp-filter-competitor"><option value="">All competitors</option>' + compOptions + '</select>' +
+      '<select class="comp-filter-type"><option value="">All types</option>' + typeOptions + '</select>' +
+      '<select class="comp-days"><option value="1">Last 24 hours</option>' +
+      '<option value="7">Last 7 days</option>' +
+      '<option value="14">Last 14 days</option>' +
+      '<option value="30" selected>Last 30 days</option>' +
+      '<option value="90">Last 90 days</option>' +
+      '<option value="0">All time</option></select></div>' +
+      '<div class="comp-changes-timeline comp-timeline"></div></div>' +
+      '<div class="comp-panel" data-tab="seo">' +
+      '<p class="sub">On-page SEO edits competitors made to existing pages — title rewrites, meta changes, H1 swaps, and schema changes.</p>' +
+      '<div class="comp-seo-list"></div></div>' +
+      '<div class="comp-panel" data-tab="activity">' +
+      '<div class="comp-chart"><h4>New pages by competitor</h4><div class="chart-new-pages"></div></div>' +
+      '<div class="comp-chart"><h4>New pages by section</h4><div class="chart-sections"></div></div>' +
+      '<div class="comp-chart"><h4>Net content investment (words)</h4><div class="chart-words"></div></div>' +
+      '<div class="comp-chart"><h4>Change type breakdown</h4><div class="chart-types"></div></div>' +
+      '<div class="comp-chart"><h4>Weekly trend</h4><div class="chart-trend"></div></div></div>' +
+      '</div>';
+  }
+
+  async function loadCompetitor() {
+    const el = document.getElementById('panel-competitor');
+    try {
+      const [circle, fit] = await Promise.all([
+        api('competitor?property=vantagecircle'),
+        api('competitor?property=vantagefit'),
+      ]);
+
+      const tabs = [
+        { key: 'vantagecircle', label: 'Vantage Circle', data: circle },
+        { key: 'vantagefit', label: 'Vantage Fit', data: fit },
+      ];
+
+      const anyData = tabs.some(function (t) { return t.data.changes && t.data.changes.length; });
+      if (!anyData) {
+        el.innerHTML = '<div class="card">No competitor data available yet.</div>';
+        return;
+      }
+
+      const tabHtml = '<div class="prop-tabs no-print">' + tabs.map(function (t, i) {
+        return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-prop="' + esc(t.key) + '">' + esc(t.label) + '</button>';
+      }).join('') + '</div>';
+
+      const panelsHtml = tabs.map(function (t, i) {
+        return '<div class="comp-prop' + (i === 0 ? ' active' : '') + '" id="comp-' + esc(t.key) + '">' +
+          '<h2>Competitor Tracker — ' + esc(t.data.label || t.label) + ' <span class="sub">(last run: ' + esc((t.data.changes && t.data.changes[0]) ? t.data.changes[0].timestamp.slice(0, 19).replace('T', ' ') + ' UTC' : '—') + ')</span></h2>' +
+          renderCompetitorBox(t.data) + '</div>';
+      }).join('');
+
+      el.innerHTML = tabHtml + panelsHtml;
+      initPropTabs(el, 'comp-prop');
+      initCompetitorInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  // ---------------------------------------------------------------- interactions
+  function initPropTabs(panelEl, propClass) {
+    var tabs = panelEl.querySelectorAll('.prop-tab');
+    var props = panelEl.querySelectorAll('.' + propClass);
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var key = tab.getAttribute('data-prop');
+        tabs.forEach(function (t) { t.classList.toggle('active', t === tab); });
+        props.forEach(function (p) {
+          p.classList.toggle('active', p.id === (propClass === 'rank-prop' ? 'rank-' : 'comp-') + key);
+        });
+      });
+    });
+  }
+
+  function initSidebar() {
+    var items = document.querySelectorAll('.nav-item');
+    items.forEach(function (it) {
+      it.addEventListener('click', function () {
+        var p = it.getAttribute('data-panel');
+        if (p) {
+          items.forEach(function (n) { n.classList.remove('active'); });
+          it.classList.add('active');
+          document.querySelectorAll('.panel').forEach(function (el) {
+            el.classList.remove('active');
+          });
+          var el = document.getElementById('panel-' + p);
+          if (el) el.classList.add('active');
+          window.scrollTo(0, 0);
+        }
+        var t = it.getAttribute('data-tab');
+        if (t) {
+          var panel = document.getElementById('panel-' + it.getAttribute('data-panel'));
+          if (panel) {
+            var tab = panel.querySelector('.prop-tab[data-prop="' + t + '"]');
+            if (tab) tab.click();
+          }
+        }
+      });
+    });
+  }
+
+  function initRankInteractions() {
+    document.querySelectorAll('.rank-prop').forEach(function (box) {
+      var search = box.querySelector('.rank-search');
+      var tagSel = box.querySelector('.tag-filter');
+      var tbody = box.querySelector('tbody');
+      if (!tbody) return;
+      var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+      var count = box.querySelector('.rank-count');
+      var ths = box.querySelectorAll('th.sortable');
+      var sortKey = 'position', sortDir = 1;
+
+      function applyFilter() {
+        var q = search ? search.value.toLowerCase() : '';
+        var tag = tagSel ? tagSel.value : '';
+        var n = 0;
+        rows.forEach(function (r) {
+          var ok = r.getAttribute('data-search').indexOf(q) > -1;
+          if (ok && tag) {
+            var rt = r.getAttribute('data-tag');
+            ok = tag === '__untagged__' ? rt === '' : rt === tag;
+          }
+          r.style.display = ok ? '' : 'none';
+          if (ok) n++;
+        });
+        if (count) count.textContent = n + ' of ' + rows.length + ' keywords';
+      }
+
+      function keyVal(r, k) {
+        var v = r.getAttribute('data-' + k);
+        if (k === 'keyword') return v;
+        return v === '' || v === null ? null : parseFloat(v);
+      }
+
+      function cmp(a, b) {
+        var va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+        if (sortKey !== 'keyword') {
+          if (va === null && vb === null) return 0;
+          if (va === null) return 1;
+          if (vb === null) return -1;
+        }
+        if (va < vb) return -sortDir;
+        if (va > vb) return sortDir;
+        return 0;
+      }
+
+      function applySort() {
+        rows.sort(cmp);
+        rows.forEach(function (r) { tbody.appendChild(r); });
+        ths.forEach(function (th) {
+          var arr = th.querySelector('.arrow');
+          if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+        });
+      }
+
+      ths.forEach(function (th) {
+        th.addEventListener('click', function () {
+          var k = th.getAttribute('data-sort');
+          if (k === sortKey) { sortDir = -sortDir; }
+          else {
+            sortKey = k;
+            sortDir = (k === 'keyword' || k === 'position') ? 1 : -1;
+          }
+          applySort();
+        });
+      });
+
+      if (search) search.addEventListener('input', applyFilter);
+      if (tagSel) tagSel.addEventListener('change', applyFilter);
+      applySort();
+      applyFilter();
+    });
+  }
+
+  function initFreshnessInteractions() {
+    var wrap = document.querySelector('.freshness-wrap');
+    if (!wrap) return;
+    var search = wrap.querySelector('.freshness-search');
+    var propSel = wrap.querySelector('.freshness-property');
+    var typeSel = wrap.querySelector('.freshness-type');
+    var actionSel = wrap.querySelector('.freshness-action');
+    var riskSel = wrap.querySelector('.freshness-risk');
+    var tbody = wrap.querySelector('tbody');
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    var count = wrap.querySelector('.freshness-count');
+    var ths = wrap.querySelectorAll('th.sortable');
+    var sortKey = 'priority', sortDir = -1;
+
+    function applyFilter() {
+      var q = search ? search.value.toLowerCase() : '';
+      var prop = propSel ? propSel.value : '';
+      var ptype = typeSel ? typeSel.value : '';
+      var action = actionSel ? actionSel.value : '';
+      var risk = riskSel ? riskSel.value : '';
+      var n = 0;
+      rows.forEach(function (r) {
+        var ok = true;
+        if (q && r.getAttribute('data-search').indexOf(q) === -1) ok = false;
+        if (ok && prop && r.getAttribute('data-property') !== prop) ok = false;
+        if (ok && ptype && r.getAttribute('data-type') !== ptype) ok = false;
+        if (ok && action && r.getAttribute('data-action') !== action) ok = false;
+        if (ok && risk && r.getAttribute('data-risk') !== risk) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' pages';
+    }
+
+    function keyVal(r, k) {
+      var v = r.getAttribute('data-' + k);
+      if (k === 'display' || k === 'keyword' || k === 'risk' || k === 'action') return (v || '').toLowerCase();
+      return v === '' || v == null ? null : parseFloat(v);
+    }
+
+    function cmp(a, b) {
+      var va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+      if (sortKey !== 'display' && sortKey !== 'keyword') {
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;
+        if (vb === null) return -1;
+      }
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    }
+
+    function applySort() {
+      rows.sort(cmp);
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      ths.forEach(function (th) {
+        var arr = th.querySelector('.arrow');
+        if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+      });
+    }
+
+    ths.forEach(function (th) {
+      th.addEventListener('click', function () {
+        var k = th.getAttribute('data-sort');
+        if (k === sortKey) { sortDir = -sortDir; }
+        else {
+          sortKey = k;
+          sortDir = (k === 'display' || k === 'keyword') ? 1 : -1;
+        }
+        applySort();
+      });
+    });
+
+    [search, propSel, typeSel, actionSel, riskSel].forEach(function (el) {
+      if (el) el.addEventListener('input', applyFilter);
+    });
+    applySort();
+    applyFilter();
+  }
+
+  function initCompetitorInteractions() {
+    document.querySelectorAll('.competitor-box').forEach(function (box) {
+      renderCompetitorPanel(box);
+      box.querySelectorAll('.comp-tab').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          box.querySelectorAll('.comp-tab').forEach(function (t) { t.classList.remove('active'); });
+          tab.classList.add('active');
+          box.querySelectorAll('.comp-panel').forEach(function (p) {
+            p.classList.toggle('active', p.getAttribute('data-tab') === tab.getAttribute('data-tab'));
+          });
+        });
+      });
+      box.querySelectorAll('.comp-days, .comp-filter-competitor, .comp-filter-type').forEach(function (el) {
+        el.addEventListener('change', function () { renderCompetitorPanel(box); });
+      });
+      var exportBtn = box.querySelector('.comp-export');
+      if (exportBtn) {
+        exportBtn.addEventListener('click', function () {
+          var data = JSON.parse(box.getAttribute('data-competitor-json') || '{}');
+          var rows = data.changes || [];
+          var csv = 'timestamp,property,competitor,domain,url,change_type,title,details\n' +
+            rows.map(function (c) {
+              return [c.timestamp, c.property, c.competitor, c.domain, c.url, c.change_type, c.title, JSON.stringify(c.details || {})]
+                .map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');
+            }).join('\n');
+          var blob = new Blob([csv], { type: 'text/csv' });
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'competitor_changes_' + data.property + '.csv';
+          a.click();
+        });
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------- boot
+  document.addEventListener('DOMContentLoaded', function () {
+    initSidebar();
+    Promise.all([
+      loadSummary(),
+      loadRank(),
+      loadBacklinks(),
+      loadFreshness(),
+      loadLLM(),
+      loadCompetitor(),
+    ]).catch(function (e) {
+      console.error('Dashboard load error:', e);
+    });
+  });
+})();

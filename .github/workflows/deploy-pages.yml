@@ -23,8 +23,10 @@ jobs:
 
       - name: Prepare public folder
         run: |
-          mkdir -p public
-          cp index.html public/index.html
+          rm -rf public
+          mkdir -p public/functions/api
+          cp index.html dashboard.js dashboard.css public/
+          cp functions/api/*.js public/functions/api/
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
