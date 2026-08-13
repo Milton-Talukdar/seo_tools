@@ -26,32 +26,9 @@ jobs:
           mkdir -p public
           cp index.html public/index.html
 
-      - name: Ensure Cloudflare Pages project exists
-        env:
-          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -e
-          PROJECT="orbit"
-          AUTH="Authorization: Bearer $CF_API_TOKEN"
-          BASE="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/pages/projects"
-          EXISTING=$(curl -s -o /dev/null -w "%{http_code}" -H "$AUTH" "$BASE/$PROJECT")
-          if [ "$EXISTING" = "404" ]; then
-            echo "Creating Pages project $PROJECT..."
-            curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
-              "$BASE" -d "{\"name\":\"$PROJECT\",\"production_branch\":\"main\"}" > /dev/null
-          elif [ "$EXISTING" = "200" ]; then
-            echo "Pages project $PROJECT already exists."
-          else
-            echo "Unexpected status checking project: $EXISTING"
-            exit 1
-          fi
-
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: orbit
-          directory: seo-suite/public
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: pages deploy seo-suite/public --project-name=orbit --branch=main
