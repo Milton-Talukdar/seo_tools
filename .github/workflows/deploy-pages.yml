@@ -25,7 +25,7 @@ jobs:
         run: |
           rm -rf public
           mkdir -p public
-          cp index.html dashboard.js dashboard.css public/
+          cp index.html dashboard.js dashboard.css _worker.js public/
 
       - name: Ensure Cloudflare Pages project exists
         uses: cloudflare/wrangler-action@v3
