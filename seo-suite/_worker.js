@@ -47,7 +47,7 @@ const PROPERTIES = {
 async function latestRankByProperty(env) {
   const rows = await sbFetch(
     env,
-    "/rank_snapshots?select=property,day,count(*)&group=property,day&order=day.desc,property&limit=40"
+    "/rank_snapshots?select=property,day&order=day.desc,property&limit=1000"
   );
   const latest = {};
   for (const r of rows) {
@@ -76,12 +76,16 @@ async function previousRankDays(env, rankSummary) {
   for (const prop of Object.keys(rankSummary)) {
     const rows = await sbFetch(
       env,
-      `/rank_snapshots?select=day,count(*)&property=eq.${encodeURIComponent(prop)}&group=day&order=day.desc&limit=10`
+      `/rank_snapshots?select=day&property=eq.${encodeURIComponent(prop)}&order=day.desc&limit=1000`
     );
-    if (rows.length > 1) {
-      const counts = rows.map((r) => r.count);
-      const fullest = Math.max(...counts);
-      const valid = rows.filter((r) => r.count >= fullest / 2);
+    const counts = {};
+    for (const r of rows) counts[r.day] = (counts[r.day] || 0) + 1;
+    const days = Object.entries(counts)
+      .map(([day, count]) => ({ day, count }))
+      .sort((a, b) => b.day.localeCompare(a.day));
+    if (days.length > 1) {
+      const fullest = Math.max(...days.map((d) => d.count));
+      const valid = days.filter((d) => d.count >= fullest / 2);
       rankSummary[prop].previous_day = valid.length > 1 ? valid[1].day : null;
     } else {
       rankSummary[prop].previous_day = null;
@@ -175,12 +179,16 @@ async function handleSummary(env) {
 async function propDays(env, property) {
   const rows = await sbFetch(
     env,
-    `/rank_snapshots?select=day,count(*)&property=eq.${encodeURIComponent(property)}&group=day&order=day.desc&limit=10`
+    `/rank_snapshots?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc&limit=1000`
   );
   if (!rows.length) return [];
-  const counts = rows.map((r) => r.count);
-  const fullest = Math.max(...counts);
-  return rows.filter((r) => r.count >= fullest / 2).map((r) => r.day);
+  const counts = {};
+  for (const r of rows) counts[r.day] = (counts[r.day] || 0) + 1;
+  const days = Object.entries(counts)
+    .map(([day, count]) => ({ day, count }))
+    .sort((a, b) => b.day.localeCompare(a.day));
+  const fullest = Math.max(...days.map((d) => d.count));
+  return days.filter((d) => d.count >= fullest / 2).map((d) => d.day);
 }
 
 async function handleRank(env, url) {
@@ -323,8 +331,8 @@ async function handleLlm(env) {
     const prevDayRow = await sbFetch(env, `/silent?select=day&order=day.desc&limit=2`);
     let previousCount = 0;
     if (prevDayRow.length > 1 && prevDayRow[1].day !== day) {
-      const prevRows = await sbFetch(env, `/silent?select=count(*)&day=eq.${prevDayRow[1].day}`);
-      previousCount = prevRows[0]?.count || 0;
+      const prevRows = await sbFetch(env, `/silent?select=query&day=eq.${prevDayRow[1].day}`);
+      previousCount = prevRows.length;
     }
     const rows = await sbFetch(
       env,
