@@ -548,6 +548,15 @@ export default {
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
+        if (route === "summary") {
+          return Response.json({
+            __debug: true,
+            resultType: typeof result,
+            resultKeys: Object.keys(result),
+            resultIsArray: Array.isArray(result),
+            result,
+          }, { headers: { "X-Cache": "MISS" } });
+        }
         return Response.json(result, { headers: { "X-Cache": "MISS" } });
       } catch (e) {
         return jsonError(e.message);
