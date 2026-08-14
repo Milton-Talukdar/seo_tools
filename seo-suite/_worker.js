@@ -504,7 +504,7 @@ async function cacheSet(env, key, value, ttl) {
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v2:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v3:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
