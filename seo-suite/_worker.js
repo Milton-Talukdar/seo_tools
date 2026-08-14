@@ -470,7 +470,15 @@ const CACHE_TTL = {
 };
 
 async function handleDebug(env) {
-  return { ok: true, ts: new Date().toISOString(), type: typeof { a: 1 } };
+  const summary = await handleSummary(env);
+  return {
+    ok: true,
+    ts: new Date().toISOString(),
+    summaryType: typeof summary,
+    summaryKeys: summary ? Object.keys(summary) : null,
+    summaryIsString: typeof summary === "string",
+    firstChars: typeof summary === "string" ? summary.slice(0, 50) : null,
+  };
 }
 
 function cacheEnabled(env) {
