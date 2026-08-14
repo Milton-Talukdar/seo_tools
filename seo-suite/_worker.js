@@ -489,13 +489,15 @@ async function cacheGet(env, key) {
 
 async function cacheSet(env, key, value, ttl) {
   if (!cacheEnabled(env)) return;
+  const headers = { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` };
+  const serialized = JSON.stringify(value);
   await fetch(`${env.UPSTASH_REDIS_REST_URL}/set/${encodeURIComponent(key)}`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify([JSON.stringify(value), "EX", ttl]),
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(serialized),
+  });
+  await fetch(`${env.UPSTASH_REDIS_REST_URL}/expire/${encodeURIComponent(key)}/${ttl}`, {
+    headers,
   });
 }
 
