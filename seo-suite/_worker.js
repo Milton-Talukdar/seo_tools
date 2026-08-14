@@ -424,6 +424,53 @@ async function handleCompetitor(env, url) {
   });
 }
 
+// ------------------------------------------------------------------ Upstash cache
+const CACHE_TTL = {
+  summary: 300,
+  rank: 3600,
+  backlinks: 3600,
+  llm: 3600,
+  freshness: 1800,
+  competitor: 1800,
+};
+
+function cacheEnabled(env) {
+  return env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN;
+}
+
+async function cacheGet(env, key) {
+  if (!cacheEnabled(env)) return null;
+  const res = await fetch(`${env.UPSTASH_REDIS_REST_URL}/get/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (!data.result) return null;
+  try {
+    return JSON.parse(data.result);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function cacheSet(env, key, value, ttl) {
+  if (!cacheEnabled(env)) return;
+  await fetch(`${env.UPSTASH_REDIS_REST_URL}/set/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify([JSON.stringify(value), "EX", ttl]),
+  });
+}
+
+function cacheKey(request, route) {
+  const url = new URL(request.url);
+  const qs = url.searchParams.toString();
+  return `seo-suite:${route}${qs ? ":" + qs : ""}`;
+}
+
 // ---------------------------------------------------------------------- router
 export default {
   async fetch(request, env, ctx) {
@@ -432,13 +479,25 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       try {
         const route = url.pathname.slice(5).replace(/\/$/, "") || "summary";
-        if (route === "summary") return await handleSummary(env);
-        if (route === "rank") return await handleRank(env, url);
-        if (route === "backlinks") return await handleBacklinks(env);
-        if (route === "llm") return await handleLlm(env);
-        if (route === "freshness") return await handleFreshness(env, url);
-        if (route === "competitor") return await handleCompetitor(env, url);
-        return jsonError("Not found", 404);
+        if (!CACHE_TTL[route]) return jsonError("Not found", 404);
+
+        const key = cacheKey(request, route);
+        const cached = await cacheGet(env, key);
+        if (cached) {
+          return Response.json(cached, { headers: { "X-Cache": "HIT" } });
+        }
+
+        let result;
+        if (route === "summary") result = await handleSummary(env);
+        else if (route === "rank") result = await handleRank(env, url);
+        else if (route === "backlinks") result = await handleBacklinks(env);
+        else if (route === "llm") result = await handleLlm(env);
+        else if (route === "freshness") result = await handleFreshness(env, url);
+        else if (route === "competitor") result = await handleCompetitor(env, url);
+        else return jsonError("Not found", 404);
+
+        ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
+        return Response.json(result, { headers: { "X-Cache": "MISS" } });
       } catch (e) {
         return jsonError(e.message);
       }
