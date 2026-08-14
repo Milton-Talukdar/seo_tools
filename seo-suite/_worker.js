@@ -466,20 +466,7 @@ const CACHE_TTL = {
   freshness: 1800,
   competitor: 1800,
   snapshots: 3600,
-  debug: 60,
 };
-
-async function handleDebug(env) {
-  const summary = await handleSummary(env);
-  return {
-    ok: true,
-    ts: new Date().toISOString(),
-    summaryType: typeof summary,
-    summaryKeys: summary ? Object.keys(summary) : null,
-    summaryIsString: typeof summary === "string",
-    firstChars: typeof summary === "string" ? summary.slice(0, 50) : null,
-  };
-}
 
 function cacheEnabled(env) {
   return env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN;
@@ -507,7 +494,7 @@ async function cacheSet(env, key, value, ttl) {
   await fetch(`${env.UPSTASH_REDIS_REST_URL}/set/${encodeURIComponent(key)}`, {
     method: "POST",
     headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify(serialized),
+    body: serialized,
   });
   await fetch(`${env.UPSTASH_REDIS_REST_URL}/expire/${encodeURIComponent(key)}/${ttl}`, {
     headers,
@@ -517,7 +504,7 @@ async function cacheSet(env, key, value, ttl) {
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v3:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v4:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
@@ -544,19 +531,9 @@ export default {
         else if (route === "freshness") result = await handleFreshness(env, url);
         else if (route === "competitor") result = await handleCompetitor(env, url);
         else if (route === "snapshots") return await handleSnapshots(env, url);
-        else if (route === "debug") result = await handleDebug(env);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
-        if (route === "summary") {
-          return Response.json({
-            __debug: true,
-            resultType: typeof result,
-            resultKeys: Object.keys(result),
-            resultIsArray: Array.isArray(result),
-            result,
-          }, { headers: { "X-Cache": "MISS" } });
-        }
         return Response.json(result, { headers: { "X-Cache": "MISS" } });
       } catch (e) {
         return jsonError(e.message);
