@@ -424,6 +424,39 @@ async function handleCompetitor(env, url) {
   });
 }
 
+// --------------------------------------------------------------- /api/snapshots
+async function handleSnapshots(env, url) {
+  const bucket = env.R2_SNAPSHOTS;
+  if (!bucket) return jsonError("R2 snapshot binding not configured", 503);
+
+  const date = url.searchParams.get("date");
+  const table = url.searchParams.get("table");
+
+  if (!table) {
+    const obj = await bucket.get("snapshots/latest.json");
+    if (!obj) return jsonError("Latest manifest not found", 404);
+    return new Response(obj.body, {
+      headers: { "Content-Type": "application/json", "X-Cache": "MISS" },
+    });
+  }
+
+  let key;
+  if (date) {
+    key = `snapshots/${date}/${table}.json`;
+  } else {
+    const manifestObj = await bucket.get("snapshots/latest.json");
+    if (!manifestObj) return jsonError("Latest manifest not found", 404);
+    const manifest = await manifestObj.json();
+    key = `snapshots/${manifest.date}/${table}.json`;
+  }
+
+  const obj = await bucket.get(key);
+  if (!obj) return jsonError(`Snapshot not found: ${key}`, 404);
+  return new Response(obj.body, {
+    headers: { "Content-Type": "application/json", "X-Cache": "MISS" },
+  });
+}
+
 // ------------------------------------------------------------------ Upstash cache
 const CACHE_TTL = {
   summary: 300,
@@ -432,6 +465,7 @@ const CACHE_TTL = {
   llm: 3600,
   freshness: 1800,
   competitor: 1800,
+  snapshots: 3600,
 };
 
 function cacheEnabled(env) {
@@ -494,6 +528,7 @@ export default {
         else if (route === "llm") result = await handleLlm(env);
         else if (route === "freshness") result = await handleFreshness(env, url);
         else if (route === "competitor") result = await handleCompetitor(env, url);
+        else if (route === "snapshots") return await handleSnapshots(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
