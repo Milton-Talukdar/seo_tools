@@ -466,7 +466,12 @@ const CACHE_TTL = {
   freshness: 1800,
   competitor: 1800,
   snapshots: 3600,
+  debug: 60,
 };
+
+async function handleDebug(env) {
+  return { ok: true, ts: new Date().toISOString(), type: typeof { a: 1 } };
+}
 
 function cacheEnabled(env) {
   return env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN;
@@ -531,6 +536,7 @@ export default {
         else if (route === "freshness") result = await handleFreshness(env, url);
         else if (route === "competitor") result = await handleCompetitor(env, url);
         else if (route === "snapshots") return await handleSnapshots(env, url);
+        else if (route === "debug") result = await handleDebug(env);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
