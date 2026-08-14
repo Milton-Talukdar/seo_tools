@@ -165,14 +165,14 @@ async function handleSummary(env) {
 
   const mover = await biggestMover(env, rank);
 
-  return Response.json({
+  return {
     rank,
     backlinks: { latest: backlinkRows[0] || null, previous: backlinkRows[1] || null },
     llm,
     freshness,
     competitors,
     biggest_mover: mover,
-  });
+  };
 }
 
 // ------------------------------------------------------------------ /api/rank
@@ -195,7 +195,7 @@ async function handleRank(env, url) {
   const property = url.searchParams.get("property") || "vantagecircle";
   const days = await propDays(env, property);
   if (!days.length) {
-    return Response.json({ property, keywords: [], latest_day: null, previous_day: null });
+    return { property, keywords: [], latest_day: null, previous_day: null };
   }
 
   const latestDay = days[0];
@@ -250,7 +250,7 @@ async function handleRank(env, url) {
     return a.keyword.localeCompare(b.keyword);
   });
 
-  return Response.json({
+  return {
     property,
     keywords,
     latest_day: latestDay,
@@ -259,7 +259,7 @@ async function handleRank(env, url) {
       total: keywords.length,
       tags: [...new Set(keywords.map((k) => k.tag).filter(Boolean))].sort(),
     },
-  });
+  };
 }
 
 // -------------------------------------------------------------- /api/backlinks
@@ -268,7 +268,7 @@ async function handleBacklinks(env) {
     sbFetch(env, "/backlink_snapshots?select=*&order=day.desc&limit=8"),
     sbFetch(env, "/refdomain_events?select=*&order=day.desc&limit=40"),
   ]);
-  return Response.json({ snapshots, events });
+  return { snapshots, events };
 }
 
 // ------------------------------------------------------------------- /api/llm
@@ -341,14 +341,14 @@ async function handleLlm(env) {
     silent = { day, count: rows.length, previous_count: previousCount, rows };
   }
 
-  return Response.json({
+  return {
     trend: trendArray,
     latest_day: latestDay,
     by_prompt: byPrompt,
     volumes,
     discovered,
     silent,
-  });
+  };
 }
 
 // --------------------------------------------------------------- /api/freshness
@@ -357,7 +357,7 @@ async function handleFreshness(env, url) {
   const action = url.searchParams.get("action");
 
   const dayRow = await sbFetch(env, "/freshness_scores?select=day&order=day.desc&limit=1");
-  if (!dayRow.length) return Response.json({ day: null, rows: [] });
+  if (!dayRow.length) return { day: null, rows: [] };
 
   const day = dayRow[0].day;
   let path = `/freshness_scores?select=*&day=eq.${day}`;
@@ -366,7 +366,7 @@ async function handleFreshness(env, url) {
   path += "&order=priority_score.desc";
 
   const rows = await sbFetch(env, path);
-  return Response.json({ day, rows });
+  return { day, rows };
 }
 
 // ------------------------------------------------------------- /api/competitor
@@ -414,14 +414,14 @@ async function handleCompetitor(env, url) {
     }
   }
 
-  return Response.json({
+  return {
     property,
     label: cfg.label,
     self_domain: cfg.domain,
     changes,
     snapshots: Object.values(latestSnap),
     competitors,
-  });
+  };
 }
 
 // --------------------------------------------------------------- /api/snapshots
@@ -502,7 +502,7 @@ async function cacheSet(env, key, value, ttl) {
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v2:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
