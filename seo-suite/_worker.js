@@ -220,7 +220,7 @@ async function handleRank(env, url) {
         )
       : Promise.resolve([]),
     sbFetch(env, `/keyword_meta?select=*&property=eq.${encodeURIComponent(property)}`),
-    histDays.length > 2
+    histDays.length > 1
       ? sbFetchAll(
           env,
           `/rank_snapshots?select=keyword,position,day&property=eq.${encodeURIComponent(property)}&day=in.(${histDays.join(",")})`
