@@ -258,3 +258,20 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .skel-lg { height: 120px; }
 .skel-sm { height: 54px; }
 @keyframes skel { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+/* rank table improvements */
+.rank-table thead th { position: sticky; top: 0; background: #fff; z-index: 2; }
+.qchips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.qchip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+         background: #f8fafc; font-size: 12px; font-weight: 600; color: var(--muted);
+         cursor: pointer; font-family: inherit; }
+.qchip:hover { background: #eef1f6; }
+.qchip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.rank-export { margin-left: auto; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+               background: #fff; font-size: 12px; font-weight: 600; color: var(--accent);
+               cursor: pointer; font-family: inherit; }
+.rank-export:hover { background: #eef1f6; }
+.spark i.gap { background: #e8ecf4; }
+.tag-summary { margin: 2px 0 8px; }
+.rank-table td a { color: var(--accent); text-decoration: none; }
+.rank-table td a:hover { text-decoration: underline; }

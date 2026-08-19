@@ -49,24 +49,18 @@
     return '<td>' + labels.map(function (l) { return '<span class="feat-chip">' + esc(l) + '</span>'; }).join(' ') + '</td>';
   }
 
-  function featuresHtml(featuresJson) {
-    let feats = [];
-    try { feats = JSON.parse(featuresJson || '[]') || []; } catch (e) {}
-    if (!feats.length) return '<td class="sub">—</td>';
-    const shown = feats.slice(0, 4).map(function (f) { return '<span class="feat-chip">' + esc(f) + '</span>'; }).join('');
-    const more = feats.length > 4 ? '<span class="sub">+' + (feats.length - 4) + '</span>' : '';
-    return '<td>' + shown + more + '</td>';
-  }
-
+  // Position cell + separate delta cell. Returns both plus the numeric
+  // change value used for sorting the Δ column.
   function posCell(prev, cur, hasPrev) {
     const curS = fmtPos(cur);
-    if (!hasPrev) return { html: '<td class="num"><b>' + curS + '</b></td>', change: '' };
-    if (prev === null && cur === null) return { html: '<td class="num">—</td>', change: '' };
+    const posHtml = '<td class="num"><b>' + curS + '</b></td>';
+    if (!hasPrev) return { posHtml: posHtml, deltaHtml: '<td class="num sub">—</td>', change: '' };
+    if (prev === null && cur === null) return { posHtml: '<td class="num">—</td>', deltaHtml: '<td class="num sub">—</td>', change: '' };
     if (prev === null) {
-      return { html: '<td class="num"><b>' + curS + '</b> <span class="pos-chip new">New</span></td>', change: String(NOT_FOUND - cur) };
+      return { posHtml: posHtml, deltaHtml: '<td class="num"><span class="pos-chip new">New</span></td>', change: String(NOT_FOUND - cur) };
     }
     if (cur === null) {
-      return { html: '<td class="num">— <span class="sub">from ' + prev + '</span> <span class="pos-chip down">out</span></td>', change: String(prev - NOT_FOUND) };
+      return { posHtml: '<td class="num">—</td>', deltaHtml: '<td class="num"><span class="pos-chip down">out</span> <span class="sub">from ' + prev + '</span></td>', change: String(prev - NOT_FOUND) };
     }
     const d = prev - cur;
     let chip;
@@ -74,18 +68,7 @@
     else if (d < 0) chip = '<span class="pos-chip down">▼' + Math.abs(d) + '</span>';
     else chip = '<span class="pos-chip flat">·</span>';
     const prevS = d ? ' <span class="sub">from ' + prev + '</span>' : '';
-    return { html: '<td class="num"><b>' + curS + '</b>' + prevS + ' ' + chip + '</td>', change: String(d) };
-  }
-
-  function trafficCell(cur, prev) {
-    if (cur === null || cur === undefined) return { html: '<td class="num sub">—</td>', val: '' };
-    const curS = fmtNum(Math.round(cur));
-    if (prev === null || prev === undefined) return { html: '<td class="num">' + curS + '</td>', val: String(cur) };
-    const d = cur - prev;
-    let delta = '';
-    if (d > 0) delta = ' <span class="delta up">+' + fmtNum(Math.round(d)) + '</span>';
-    else if (d < 0) delta = ' <span class="delta down">' + fmtNum(Math.round(d)) + '</span>';
-    return { html: '<td class="num">' + curS + delta + '</td>', val: String(cur) };
+    return { posHtml: posHtml, deltaHtml: '<td class="num">' + chip + prevS + '</td>', change: String(d) };
   }
 
   async function api(path) {
@@ -184,28 +167,55 @@
     const rows = data.keywords.map(function (k) {
       const hasPrev = data.previous_day !== null && k.previous_position !== undefined;
       const pos = posCell(k.previous_position, k.position, hasPrev);
-      const traffic = trafficCell(k.traffic_cur, k.traffic_prev);
       const shortUrl = (k.url || '').replace(/^https?:\/\//, '').slice(0, 50);
       const vol = k.volume;
       const kd = k.kd;
+      let state = '';
+      if (hasPrev) {
+        if (k.previous_position === null && k.position !== null) state = 'new';
+        else if (k.position === null && k.previous_position !== null) state = 'out';
+        else if (k.position !== null && k.previous_position !== null) {
+          const dd = k.previous_position - k.position;
+          state = dd > 0 ? 'up' : dd < 0 ? 'down' : 'flat';
+        }
+      }
+      const hist = (k.history || []).slice().reverse(); // oldest → latest
+      const spark = hist.length > 1
+        ? '<span class="spark" title="position history, oldest to latest">' + hist.map(function (p) {
+            if (p === null || p === undefined) return '<i class="gap" style="height:2px"></i>';
+            return '<i style="height:' + Math.max(2, Math.round((101 - Math.min(p, 100)) * 18 / 100)) + 'px"></i>';
+          }).join('') + '</span>'
+        : '<span class="sub">—</span>';
       return '<tr data-keyword="' + esc((k.keyword || '').toLowerCase()) + '" ' +
         'data-search="' + esc(((k.keyword || '') + ' ' + (k.tag || '')).toLowerCase()) + '" ' +
         'data-tag="' + esc((k.tag || '').toLowerCase()) + '" ' +
         'data-position="' + (k.position === null ? '' : esc(String(k.position))) + '" ' +
         'data-change="' + esc(pos.change) + '" ' +
         'data-volume="' + (vol === null || vol === undefined ? '' : esc(String(vol))) + '" ' +
-        'data-traffic="' + esc(traffic.val) + '" ' +
-        'data-kd="' + (kd === null || kd === undefined ? '' : esc(String(kd))) + '">' +
+        'data-kd="' + (kd === null || kd === undefined ? '' : esc(String(kd))) + '" ' +
+        'data-state="' + state + '" ' +
+        'data-url="' + esc(k.url || '') + '">' +
         '<td>' + esc(k.keyword) + '</td>' +
         '<td class="tag-cell">' + esc(k.tag) + '</td>' +
-        pos.html +
+        pos.posHtml +
+        pos.deltaHtml +
+        '<td>' + spark + '</td>' +
         '<td class="num">' + (vol !== null && vol !== undefined ? fmtNum(vol) : '<span class="sub">—</span>') + '</td>' +
-        traffic.html +
         '<td class="num">' + (kd !== null && kd !== undefined ? Math.round(kd) : '<span class="sub">—</span>') + '</td>' +
         intentHtml(k.intent) +
         '<td>' + (k.branded ? '<span class="badge-b">B</span>' : '') + '</td>' +
-        featuresHtml(k.serp_features) +
-        '<td class="sub">' + esc(shortUrl) + '</td></tr>';
+        '<td class="sub">' + (k.url ? '<a href="' + esc(k.url) + '" target="_blank" rel="noopener">' + esc(shortUrl) + '</a>' : '') + '</td></tr>';
+    }).join('');
+
+    const tagStats = {};
+    data.keywords.forEach(function (k) {
+      if (!k.tag) return;
+      const s = (tagStats[k.tag] ||= { n: 0, top10: 0 });
+      s.n++;
+      if (k.position !== null && k.position !== undefined && k.position <= 10) s.top10++;
+    });
+    const tagSummary = Object.keys(tagStats).sort().map(function (t) {
+      return '<span class="chip tracked">' + esc(t) + ' · ' + tagStats[t].n + ' kw · ' + tagStats[t].top10 + ' top 10</span>';
     }).join('');
 
     return '<div class="rank-prop" id="rank-' + esc(data.property) + '">' +
@@ -213,20 +223,30 @@
       '<div class="table-tools no-print">' +
       '<input class="rank-search" type="search" placeholder="Search keywords or tags…">' +
       '<select class="tag-filter"><option value="">All tags</option>' + tagOptions + '<option value="__untagged__">Untagged</option></select>' +
+      '<span class="qchips">' +
+      '<button class="qchip active" data-q="">All</button>' +
+      '<button class="qchip" data-q="up">▲ Moved up</button>' +
+      '<button class="qchip" data-q="down">▼ Dropped</button>' +
+      '<button class="qchip" data-q="new">New</button>' +
+      '<button class="qchip" data-q="out">Out of top 100</button>' +
+      '</span>' +
+      '<button class="rank-export" type="button">Export CSV</button>' +
       '<span class="rank-count sub">' + esc(String(data.keywords.length)) + ' keywords</span></div>' +
+      (tagSummary ? '<div class="tag-summary">' + tagSummary + '</div>' : '') +
       '<table class="rank-table"><thead><tr>' +
       '<th class="sortable" data-sort="keyword">Keyword <span class="arrow"></span></th>' +
       '<th>Tag</th>' +
       '<th class="sortable" data-sort="position">Position <span class="arrow"></span></th>' +
+      '<th class="sortable" data-sort="change">Δ <span class="arrow"></span></th>' +
+      '<th>Trend</th>' +
       '<th class="sortable" data-sort="volume">Volume <span class="arrow"></span></th>' +
-      '<th class="sortable" data-sort="traffic">Traffic <span class="arrow"></span></th>' +
       '<th class="sortable" data-sort="kd">KD <span class="arrow"></span></th>' +
-      '<th>Intent</th><th>Branded</th><th>SERP features</th><th>URL</th>' +
+      '<th>Intent</th><th>Branded</th><th>URL</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>' +
       '<p class="sub">Google US top 100 for ' + esc(cfg.domain) + ' — current: ' + esc(data.latest_day || '—') +
       (data.previous_day ? ', previous: ' + esc(data.previous_day) : '') +
-      '. Volume / traffic / KD / intent from keyword_meta. — = unranked or no data. ' +
-      '<span class="no-print">Type to filter, pick a tag, click a column header to sort.</span></p>' +
+      '. Δ = position change vs previous check (gains on top when sorted). Trend = weekly positions, oldest to latest. Volume / KD / intent from keyword_meta. — = unranked or no data. ' +
+      '<span class="no-print">Type to filter, pick a tag or quick filter, click a column header to sort.</span></p>' +
       '</div></div>';
   }
 
@@ -908,6 +928,8 @@
       var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
       var count = box.querySelector('.rank-count');
       var ths = box.querySelectorAll('th.sortable');
+      var qchips = box.querySelectorAll('.qchip');
+      var qState = '';
       var sortKey = 'position', sortDir = 1;
 
       function applyFilter() {
@@ -920,6 +942,7 @@
             var rt = r.getAttribute('data-tag');
             ok = tag === '__untagged__' ? rt === '' : rt === tag;
           }
+          if (ok && qState) ok = r.getAttribute('data-state') === qState;
           r.style.display = ok ? '' : 'none';
           if (ok) n++;
         });
@@ -967,6 +990,36 @@
 
       if (search) search.addEventListener('input', applyFilter);
       if (tagSel) tagSel.addEventListener('change', applyFilter);
+
+      qchips.forEach(function (c) {
+        c.addEventListener('click', function () {
+          qState = c.getAttribute('data-q');
+          qchips.forEach(function (x) { x.classList.toggle('active', x === c); });
+          applyFilter();
+        });
+      });
+
+      var exportBtn = box.querySelector('.rank-export');
+      if (exportBtn) exportBtn.addEventListener('click', function () {
+        var q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+        var visible = rows.filter(function (r) { return r.style.display !== 'none'; });
+        var csv = ['keyword,tag,position,change,volume,kd,url'].concat(visible.map(function (r) {
+          return [
+            q(r.cells[0].textContent),
+            q(r.cells[1].textContent),
+            r.getAttribute('data-position') || '',
+            r.getAttribute('data-change') || '',
+            r.getAttribute('data-volume') || '',
+            r.getAttribute('data-kd') || '',
+            q(r.getAttribute('data-url') || '')
+          ].join(',');
+        })).join('\n');
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        a.download = box.id + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
       applySort();
       applyFilter();
     });

@@ -192,8 +192,9 @@ async function handleRank(env, url) {
 
   const latestDay = days[0];
   const previousDay = days.length > 1 ? days[1] : null;
+  const histDays = days.slice(0, 8);
 
-  const [rankRows, prevRows, metaRows] = await Promise.all([
+  const [rankRows, prevRows, metaRows, histRows] = await Promise.all([
     sbFetch(
       env,
       `/rank_snapshots?select=keyword,position,url,serp_features&property=eq.${encodeURIComponent(property)}&day=eq.${latestDay}`
@@ -205,6 +206,12 @@ async function handleRank(env, url) {
         )
       : Promise.resolve([]),
     sbFetch(env, `/keyword_meta?select=*&property=eq.${encodeURIComponent(property)}`),
+    histDays.length > 2
+      ? sbFetch(
+          env,
+          `/rank_snapshots?select=keyword,position,day&property=eq.${encodeURIComponent(property)}&day=in.(${histDays.join(",")})&limit=20000`
+        )
+      : Promise.resolve([]),
   ]);
 
   const meta = {};
@@ -212,12 +219,24 @@ async function handleRank(env, url) {
   const prev = {};
   for (const r of prevRows) prev[r.keyword] = r.position;
 
+  // Per-keyword position history, newest first, for sparklines.
+  const historyByKw = {};
+  for (const r of histRows) {
+    const byDay = (historyByKw[r.keyword] ||= {});
+    byDay[r.day] = r.position;
+  }
+  const historyList = {};
+  for (const [kw, byDay] of Object.entries(historyByKw)) {
+    historyList[kw] = histDays.map((d) => (d in byDay ? byDay[d] : null));
+  }
+
   const keywords = rankRows.map((r) => {
     const m = meta[r.keyword] || {};
     return {
       keyword: r.keyword,
       position: r.position,
       previous_position: prev[r.keyword] !== undefined ? prev[r.keyword] : null,
+      history: historyList[r.keyword] || [],
       url: r.url,
       serp_features: r.serp_features,
       tag: m.tag || "",
