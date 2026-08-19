@@ -11,11 +11,17 @@ function sbHeaders(env) {
   };
 }
 
-async function sbFetch(env, path) {
+async function sbFetch(env, path, _retried = false) {
   const url = `${env.SUPABASE_URL}/rest/v1${path}`;
   const res = await fetch(url, { headers: sbHeaders(env) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    // Graceful degradation while supabase_schema_patch_v3.sql is unapplied:
+    // the property column doesn't exist yet, so retry without that filter
+    // (all legacy rows are vantagecircle anyway).
+    if (!_retried && /column .*property.* does not exist/.test(text)) {
+      return sbFetch(env, path.replace(/([&?])property=eq\.[^&]*/g, "$1").replace(/[?&]$/, ""), true);
+    }
     throw new Error(`Supabase ${res.status}: ${text}`);
   }
   return res.json();
