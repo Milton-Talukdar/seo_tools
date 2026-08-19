@@ -145,10 +145,8 @@ a.research-btn { padding: 8px 22px; border-radius: 8px; text-decoration: none;
   .seed-detail-kpis { grid-template-columns: repeat(3, 1fr); }
 }
 /* ---- rank tracker v2: one page per property + ahrefs-style cells ---- */
-.has-js .rank-prop { display: none; }
-.has-js .rank-prop.active { display: block; }
-.has-js .comp-prop { display: none; }
-.has-js .comp-prop.active { display: block; }
+.has-js .rank-prop, .has-js .comp-prop, .has-js .llm-prop { display: none; }
+.has-js .rank-prop.active, .has-js .comp-prop.active, .has-js .llm-prop.active { display: block; }
 .table-tools select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px;
                       font-size: 13px; font-family: inherit; background: #f8fafc; color: var(--ink); }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -244,7 +242,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .hero .sub, .eyebrow { color: #444; }
   details, .no-print, .sidebar, .table-tools { display: none; }
   .content { margin-left: 0; }
-  .has-js .panel, .has-js .rank-prop { display: block !important; }
+  .has-js .panel, .has-js .rank-prop, .has-js .comp-prop, .has-js .llm-prop { display: block !important; }
   .card, .kpi { break-inside: avoid; box-shadow: none; }
 }
 

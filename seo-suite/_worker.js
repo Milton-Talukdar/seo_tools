@@ -563,7 +563,7 @@ async function cacheSet(env, key, value, ttl) {
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v8:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v9:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
