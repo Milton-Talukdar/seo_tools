@@ -21,6 +21,20 @@ async function sbFetch(env, path) {
   return res.json();
 }
 
+// Paginated variant: a `select=day` inventory over a 993-keyword property
+// returns one row per keyword per day, so a bare limit=1000 only sees the
+// latest day. Page until a short page arrives.
+async function sbFetchAll(env, path, pageSize = 1000) {
+  const sep = path.includes("?") ? "&" : "?";
+  const out = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await sbFetch(env, `${path}${sep}limit=${pageSize}&offset=${offset}`);
+    out.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return out;
+}
+
 function jsonError(message, status = 500) {
   return Response.json({ error: message }, { status, headers: { "Content-Type": "application/json" } });
 }
@@ -48,9 +62,9 @@ const PROPERTIES = {
 // covering latest + previous day (run in parallel). Replaces the old
 // latestRankByProperty / previousRankDays / biggestMover N+1 chain.
 async function rankSummary(env) {
-  const rows = await sbFetch(
+  const rows = await sbFetchAll(
     env,
-    "/rank_snapshots?select=property,day&order=day.desc&limit=1000"
+    "/rank_snapshots?select=property,day&order=day.desc"
   );
   const byProp = {};
   for (const r of rows) {
@@ -169,9 +183,9 @@ async function handleSummary(env) {
 
 // ------------------------------------------------------------------ /api/rank
 async function propDays(env, property) {
-  const rows = await sbFetch(
+  const rows = await sbFetchAll(
     env,
-    `/rank_snapshots?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc&limit=1000`
+    `/rank_snapshots?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc`
   );
   if (!rows.length) return [];
   const counts = {};
@@ -207,9 +221,9 @@ async function handleRank(env, url) {
       : Promise.resolve([]),
     sbFetch(env, `/keyword_meta?select=*&property=eq.${encodeURIComponent(property)}`),
     histDays.length > 2
-      ? sbFetch(
+      ? sbFetchAll(
           env,
-          `/rank_snapshots?select=keyword,position,day&property=eq.${encodeURIComponent(property)}&day=in.(${histDays.join(",")})&limit=20000`
+          `/rank_snapshots?select=keyword,position,day&property=eq.${encodeURIComponent(property)}&day=in.(${histDays.join(",")})`
         )
       : Promise.resolve([]),
   ]);
@@ -517,7 +531,7 @@ async function cacheSet(env, key, value, ttl) {
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v5:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v6:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
