@@ -44,116 +44,110 @@ const PROPERTIES = {
 };
 
 // ---------------------------------------------------------------- /api/summary
-async function latestRankByProperty(env) {
+// Batched rewrite: 1 query for day inventory, then 1 query per property
+// covering latest + previous day (run in parallel). Replaces the old
+// latestRankByProperty / previousRankDays / biggestMover N+1 chain.
+async function rankSummary(env) {
   const rows = await sbFetch(
     env,
-    "/rank_snapshots?select=property,day&order=day.desc,property&limit=1000"
+    "/rank_snapshots?select=property,day&order=day.desc&limit=1000"
   );
-  const latest = {};
+  const byProp = {};
   for (const r of rows) {
-    if (!latest[r.property]) latest[r.property] = r.day;
+    const p = (byProp[r.property] ||= { counts: {} });
+    p.counts[r.day] = (p.counts[r.day] || 0) + 1;
   }
-  const result = {};
-  for (const [prop, day] of Object.entries(latest)) {
-    const snaps = await sbFetch(
-      env,
-      `/rank_snapshots?select=keyword,position&property=eq.${encodeURIComponent(prop)}&day=eq.${day}`
-    );
-    const ranked = snaps.filter((s) => s.position !== null && s.position !== undefined);
-    result[prop] = {
-      latest_day: day,
-      count: snaps.length,
-      ranked: ranked.length,
-      top3: ranked.filter((s) => s.position <= 3).length,
-      top10: ranked.filter((s) => s.position <= 10).length,
-      top50: ranked.filter((s) => s.position <= 50).length,
-    };
-  }
-  return result;
-}
+  const props = Object.keys(byProp);
+  if (!props.length) return { summary: {}, mover: null };
 
-async function previousRankDays(env, rankSummary) {
-  for (const prop of Object.keys(rankSummary)) {
-    const rows = await sbFetch(
-      env,
-      `/rank_snapshots?select=day&property=eq.${encodeURIComponent(prop)}&order=day.desc&limit=1000`
-    );
-    const counts = {};
-    for (const r of rows) counts[r.day] = (counts[r.day] || 0) + 1;
-    const days = Object.entries(counts)
-      .map(([day, count]) => ({ day, count }))
-      .sort((a, b) => b.day.localeCompare(a.day));
-    if (days.length > 1) {
+  const perProp = await Promise.all(
+    props.map(async (prop) => {
+      const days = Object.entries(byProp[prop].counts)
+        .map(([day, count]) => ({ day, count }))
+        .sort((a, b) => b.day.localeCompare(a.day));
       const fullest = Math.max(...days.map((d) => d.count));
-      const valid = days.filter((d) => d.count >= fullest / 2);
-      rankSummary[prop].previous_day = valid.length > 1 ? valid[1].day : null;
-    } else {
-      rankSummary[prop].previous_day = null;
-    }
-  }
-}
+      const valid = days.filter((d) => d.count >= fullest / 2).map((d) => d.day);
+      const latest = valid[0];
+      const previous = valid.length > 1 ? valid[1] : null;
 
-async function biggestMover(env, rankSummary) {
-  let best = null;
-  for (const [prop, info] of Object.entries(rankSummary)) {
-    if (!info.previous_day) continue;
-    const prevRows = await sbFetch(
-      env,
-      `/rank_snapshots?select=keyword,position&property=eq.${encodeURIComponent(prop)}&day=eq.${info.previous_day}`
-    );
-    const prev = {};
-    for (const r of prevRows) prev[r.keyword] = r.position;
-    const curRows = await sbFetch(
-      env,
-      `/rank_snapshots?select=keyword,position&property=eq.${encodeURIComponent(prop)}&day=eq.${info.latest_day}`
-    );
-    for (const r of curRows) {
-      const p = prev[r.keyword];
-      if (p === undefined) continue;
-      const prevVal = p === null ? NOT_FOUND : p;
-      const curVal = r.position === null ? NOT_FOUND : r.position;
-      const delta = prevVal - curVal;
-      if (!best || delta > best.delta) {
-        best = { keyword: r.keyword, property: prop, delta, previous: p, current: r.position };
+      const dayFilter = previous ? `in.(${latest},${previous})` : `eq.${latest}`;
+      const snaps = await sbFetch(
+        env,
+        `/rank_snapshots?select=keyword,position,day&property=eq.${encodeURIComponent(prop)}&day=${dayFilter}`
+      );
+
+      const cur = snaps.filter((s) => s.day === latest);
+      const ranked = cur.filter((s) => s.position !== null && s.position !== undefined);
+      const info = {
+        latest_day: latest,
+        previous_day: previous,
+        count: cur.length,
+        ranked: ranked.length,
+        top3: ranked.filter((s) => s.position <= 3).length,
+        top10: ranked.filter((s) => s.position <= 10).length,
+        top50: ranked.filter((s) => s.position <= 50).length,
+      };
+
+      let mover = null;
+      if (previous) {
+        const prev = {};
+        for (const s of snaps) if (s.day === previous) prev[s.keyword] = s.position;
+        for (const s of cur) {
+          const p = prev[s.keyword];
+          if (p === undefined) continue;
+          const delta = (p === null ? NOT_FOUND : p) - (s.position === null ? NOT_FOUND : s.position);
+          if (!mover || delta > mover.delta) {
+            mover = { keyword: s.keyword, property: prop, delta, previous: p, current: s.position };
+          }
+        }
       }
-    }
+      return { prop, info, mover };
+    })
+  );
+
+  const summary = {};
+  let best = null;
+  for (const { prop, info, mover } of perProp) {
+    summary[prop] = info;
+    if (mover && (!best || mover.delta > best.delta)) best = mover;
   }
-  return best;
+  return { summary, mover: best };
 }
 
 async function handleSummary(env) {
-  const rank = await latestRankByProperty(env);
-  await previousRankDays(env, rank);
+  const [rankBlock, backlinkRows, llmDayRow, freshDayRow, compSnaps] = await Promise.all([
+    rankSummary(env),
+    sbFetch(env, "/backlink_snapshots?select=*&order=day.desc&limit=2"),
+    sbFetch(env, "/llm_snapshots?select=day&order=day.desc&limit=1"),
+    sbFetch(env, "/freshness_scores?select=day&order=day.desc&limit=1"),
+    sbFetch(
+      env,
+      "/competitor_snapshots?select=property,competitor,total_urls&order=day.desc&limit=200"
+    ),
+  ]);
 
-  const backlinkRows = await sbFetch(env, "/backlink_snapshots?select=*&order=day.desc&limit=2");
+  const [llm, freshness] = await Promise.all([
+    (async () => {
+      if (!llmDayRow.length) return { day: null, count: 0, sov: 0 };
+      const day = llmDayRow[0].day;
+      const answers = await sbFetch(env, `/llm_snapshots?select=mentions&day=eq.${day}`);
+      let you = 0;
+      for (const a of answers) {
+        const m = JSON.parse(a.mentions || "{}");
+        if (m[YOU]) you++;
+      }
+      return { day, count: answers.length, sov: answers.length ? Math.round((you / answers.length) * 100) : 0 };
+    })(),
+    (async () => {
+      if (!freshDayRow.length) return { day: null, total: 0, counts: {} };
+      const day = freshDayRow[0].day;
+      const rows = await sbFetch(env, `/freshness_scores?select=action&day=eq.${day}`);
+      const counts = {};
+      for (const r of rows) counts[r.action] = (counts[r.action] || 0) + 1;
+      return { day, total: rows.length, counts };
+    })(),
+  ]);
 
-  const llmDayRow = await sbFetch(env, "/llm_snapshots?select=day&order=day.desc&limit=1");
-  let llm = { day: null, count: 0, sov: 0 };
-  if (llmDayRow.length) {
-    const day = llmDayRow[0].day;
-    const answers = await sbFetch(env, `/llm_snapshots?select=mentions&day=eq.${day}`);
-    let you = 0;
-    for (const a of answers) {
-      const m = JSON.parse(a.mentions || "{}");
-      if (m[YOU]) you++;
-    }
-    llm = { day, count: answers.length, sov: answers.length ? Math.round((you / answers.length) * 100) : 0 };
-  }
-
-  const freshDayRow = await sbFetch(env, "/freshness_scores?select=day&order=day.desc&limit=1");
-  let freshness = { day: null, total: 0, counts: {} };
-  if (freshDayRow.length) {
-    const day = freshDayRow[0].day;
-    const rows = await sbFetch(env, `/freshness_scores?select=action&day=eq.${day}`);
-    const counts = {};
-    for (const r of rows) counts[r.action] = (counts[r.action] || 0) + 1;
-    freshness = { day, total: rows.length, counts };
-  }
-
-  const compSnaps = await sbFetch(
-    env,
-    "/competitor_snapshots?select=property,competitor,total_urls&order=day.desc&limit=200"
-  );
   const competitors = {};
   for (const row of compSnaps) {
     const c = (competitors[row.property] ||= { competitors: [], total_urls: 0 });
@@ -163,15 +157,13 @@ async function handleSummary(env) {
     }
   }
 
-  const mover = await biggestMover(env, rank);
-
   return {
-    rank,
+    rank: rankBlock.summary,
     backlinks: { latest: backlinkRows[0] || null, previous: backlinkRows[1] || null },
     llm,
     freshness,
     competitors,
-    biggest_mover: mover,
+    biggest_mover: rankBlock.mover,
   };
 }
 
@@ -273,9 +265,12 @@ async function handleBacklinks(env) {
 
 // ------------------------------------------------------------------- /api/llm
 async function handleLlm(env) {
+  // Trend only needs day+mentions; skip prompt/answer (the heavy columns)
+  // and cap history at 180 days to keep the payload small.
+  const cutoff = new Date(Date.now() - 180 * 86400000).toISOString().split("T")[0];
   const allRows = await sbFetch(
     env,
-    "/llm_snapshots?select=day,platform,prompt,mentions,cited_mine,answer&order=day.desc"
+    `/llm_snapshots?select=day,mentions&day=gte.${cutoff}&order=day.desc`
   );
 
   const trend = {};
@@ -489,15 +484,14 @@ async function cacheGet(env, key) {
 
 async function cacheSet(env, key, value, ttl) {
   if (!cacheEnabled(env)) return;
-  const headers = { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` };
-  const serialized = JSON.stringify(value);
-  await fetch(`${env.UPSTASH_REDIS_REST_URL}/set/${encodeURIComponent(key)}`, {
+  // Single SET with EX — no separate EXPIRE round-trip.
+  await fetch(`${env.UPSTASH_REDIS_REST_URL}/set/${encodeURIComponent(key)}?EX=${ttl}`, {
     method: "POST",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: serialized,
-  });
-  await fetch(`${env.UPSTASH_REDIS_REST_URL}/expire/${encodeURIComponent(key)}/${ttl}`, {
-    headers,
+    headers: {
+      Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(value),
   });
 }
 
@@ -517,10 +511,16 @@ export default {
         const route = url.pathname.slice(5).replace(/\/$/, "") || "summary";
         if (!CACHE_TTL[route]) return jsonError("Not found", 404);
 
+        // X-Cache-Enabled makes it possible to tell from curl whether the
+        // Upstash env vars are configured at all (vs. silently uncached).
+        const cacheHeaders = {
+          "X-Cache-Enabled": cacheEnabled(env) ? "true" : "false",
+        };
+
         const key = cacheKey(request, route);
         const cached = await cacheGet(env, key);
         if (cached) {
-          return Response.json(cached, { headers: { "X-Cache": "HIT" } });
+          return Response.json(cached, { headers: { ...cacheHeaders, "X-Cache": "HIT" } });
         }
 
         let result;
@@ -534,7 +534,7 @@ export default {
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
-        return Response.json(result, { headers: { "X-Cache": "MISS" } });
+        return Response.json(result, { headers: { ...cacheHeaders, "X-Cache": "MISS" } });
       } catch (e) {
         return jsonError(e.message);
       }

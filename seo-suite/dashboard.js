@@ -101,6 +101,10 @@
     return '<div class="card" style="color:var(--rose)"><b>Error</b><p class="sub">' + esc(message) + '</p></div>';
   }
 
+  function stampHtml(dayText) {
+    return dayText ? '<div class="panel-stamp">Data as of ' + esc(dayText) + '</div>' : '';
+  }
+
   // ---------------------------------------------------------------- summary
   async function loadSummary() {
     const el = document.getElementById('panel-summary');
@@ -165,7 +169,7 @@
         return '<div class="kpi"><div class="num">' + c[0] + '</div><div class="label">' + c[1] + '</div></div>';
       }).join('');
 
-      el.innerHTML = '<h2>Executive summary</h2><div class="kpis">' + kpiHtml + '</div>';
+      el.innerHTML = '<h2>Executive summary</h2><div class="kpis">' + kpiHtml + '</div>' + stampHtml(latestDay);
     } catch (e) {
       el.innerHTML = errorCard(e.message);
     }
@@ -253,7 +257,8 @@
         return renderRankProp(t.data).replace('class="rank-prop"', 'class="rank-prop' + (i === 0 ? ' active' : '') + '"');
       }).join('');
 
-      el.innerHTML = '<h2>Rank Tracker · Google US top 100</h2>' + tabHtml + panelsHtml;
+      const rankDay = [circle.latest_day, fit.latest_day].filter(Boolean).sort().pop();
+      el.innerHTML = '<h2>Rank Tracker · Google US top 100</h2>' + tabHtml + panelsHtml + stampHtml(rankDay);
       initPropTabs(el, 'rank-prop');
       initRankInteractions();
     } catch (e) {
@@ -302,7 +307,7 @@
           '<p class="sub">Weekly API runs record aggregate counts; per-domain detail comes from the one-time Ahrefs import.</p></div>';
       }
 
-      el.innerHTML = html;
+      el.innerHTML = html + stampHtml(data.snapshots && data.snapshots[0] && data.snapshots[0].day);
     } catch (e) {
       el.innerHTML = errorCard(e.message);
     }
@@ -397,7 +402,7 @@
         }
       }
 
-      el.innerHTML = html || '<div class="card">No LLM visibility data available yet.</div>';
+      el.innerHTML = (html || '<div class="card">No LLM visibility data available yet.</div>') + stampHtml(data.latest_day);
     } catch (e) {
       el.innerHTML = errorCard(e.message);
     }
@@ -503,7 +508,7 @@
         '<th>Reason</th>' +
         '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
 
-      el.innerHTML = '<h2>Content Freshness</h2>' + kpiHtml + candidatesHtml + tableHtml;
+      el.innerHTML = '<h2>Content Freshness</h2>' + kpiHtml + candidatesHtml + tableHtml + stampHtml(data.day);
       initFreshnessInteractions();
     } catch (e) {
       el.innerHTML = errorCard(e.message);
@@ -850,31 +855,48 @@
     });
   }
 
+  function panelFromHash() {
+    var m = location.hash.match(/^#\/([a-z]+)(?:\/([a-z]+))?/);
+    return m ? { p: m[1], t: m[2] } : null;
+  }
+
+  function activatePanel(p, t) {
+    var items = Array.from(document.querySelectorAll('.nav-item'));
+    var it = items.find(function (n) {
+      return n.getAttribute('data-panel') === p &&
+        (t ? n.getAttribute('data-tab') === t : !n.getAttribute('data-tab'));
+    }) || items.find(function (n) { return n.getAttribute('data-panel') === p; });
+    if (!it) return;
+    items.forEach(function (n) { n.classList.remove('active'); });
+    it.classList.add('active');
+    document.querySelectorAll('.panel').forEach(function (el) { el.classList.remove('active'); });
+    var el = document.getElementById('panel-' + p);
+    if (el) el.classList.add('active');
+    var tab = t || it.getAttribute('data-tab');
+    if (tab && el) {
+      var tabBtn = el.querySelector('.prop-tab[data-prop="' + tab + '"]');
+      if (tabBtn) tabBtn.click();
+    }
+    window.scrollTo(0, 0);
+  }
+
   function initSidebar() {
-    var items = document.querySelectorAll('.nav-item');
-    items.forEach(function (it) {
+    document.querySelectorAll('.nav-item').forEach(function (it) {
       it.addEventListener('click', function () {
         var p = it.getAttribute('data-panel');
-        if (p) {
-          items.forEach(function (n) { n.classList.remove('active'); });
-          it.classList.add('active');
-          document.querySelectorAll('.panel').forEach(function (el) {
-            el.classList.remove('active');
-          });
-          var el = document.getElementById('panel-' + p);
-          if (el) el.classList.add('active');
-          window.scrollTo(0, 0);
-        }
+        if (!p) return;
         var t = it.getAttribute('data-tab');
-        if (t) {
-          var panel = document.getElementById('panel-' + it.getAttribute('data-panel'));
-          if (panel) {
-            var tab = panel.querySelector('.prop-tab[data-prop="' + t + '"]');
-            if (tab) tab.click();
-          }
-        }
+        var h = '#/' + p + (t ? '/' + t : '');
+        if (location.hash === h) activatePanel(p, t);
+        else location.hash = h; // hashchange handler activates the panel
       });
     });
+    window.addEventListener('hashchange', function () {
+      var r = panelFromHash();
+      if (r) activatePanel(r.p, r.t);
+    });
+    var initial = panelFromHash();
+    if (initial) activatePanel(initial.p, initial.t);
   }
 
   function initRankInteractions() {
@@ -1077,6 +1099,10 @@
       loadCompetitor(),
     ]).catch(function (e) {
       console.error('Dashboard load error:', e);
+    }).finally(function () {
+      // Re-apply the hash panel/tab now that async content (prop tabs) exists.
+      var r = panelFromHash();
+      if (r) activatePanel(r.p, r.t);
     });
   });
 })();
