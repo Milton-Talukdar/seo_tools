@@ -26,6 +26,32 @@ FALLBACK_ENV_PATH = HERE.parent / "llm-keyword-tracker" / ".env"
 BASE = "https://api.dataforseo.com/v3"
 SUPABASE_BATCH = 500
 
+# LLM visibility tracked as two separate projects. Each has its own prompts
+# file, seeds file, competitor brand set, and domain used for citation
+# detection. `you` must be the first entry in `brands`.
+LLM_PROPERTIES = {
+    "vantagecircle": {
+        "label": "Vantage Circle",
+        "domain": "vantagecircle.com",
+        "you": "vantage circle",
+        "brands": ["vantage circle", "bonusly", "kudos", "achievers",
+                   "awardco", "nectar", "motivosity", "o.c. tanner",
+                   "workhuman"],
+        "prompts_csv": "prompts.csv",
+        "seeds_csv": "seeds.csv",
+    },
+    "vantagefit": {
+        "label": "Vantage Fit",
+        "domain": "vantagefit.io",
+        "you": "vantage fit",
+        "brands": ["vantage fit", "personify health", "virgin pulse",
+                   "wellable", "limeade", "incentfit", "wellsteps",
+                   "sonic boom", "woliba"],
+        "prompts_csv": "prompts-fit.csv",
+        "seeds_csv": "seeds-fit.csv",
+    },
+}
+
 
 def supabase_client():
     """Return a Supabase client if credentials are configured, else None."""
@@ -123,16 +149,21 @@ def init_db():
     CREATE TABLE IF NOT EXISTS llm_snapshots(
         day TEXT, platform TEXT, prompt TEXT, mentions TEXT,
         cited_mine INTEGER, links TEXT, answer TEXT,
-        PRIMARY KEY(day, platform, prompt));
+        property TEXT NOT NULL DEFAULT 'vantagecircle',
+        PRIMARY KEY(day, platform, prompt, property));
     CREATE TABLE IF NOT EXISTS volumes(
         day TEXT, keyword TEXT, ai_search_volume INTEGER, trend_json TEXT,
-        PRIMARY KEY(day, keyword));
+        property TEXT NOT NULL DEFAULT 'vantagecircle',
+        PRIMARY KEY(day, keyword, property));
     CREATE TABLE IF NOT EXISTS discovered(
-        query TEXT PRIMARY KEY, platform TEXT, ai_search_volume INTEGER,
-        seed TEXT, first_seen TEXT, last_seen TEXT);
+        query TEXT, platform TEXT, ai_search_volume INTEGER,
+        seed TEXT, first_seen TEXT, last_seen TEXT,
+        property TEXT NOT NULL DEFAULT 'vantagecircle',
+        PRIMARY KEY(query, property));
     CREATE TABLE IF NOT EXISTS silent(
         day TEXT, query TEXT, platform TEXT, ai_search_volume INTEGER,
-        PRIMARY KEY(day, query, platform));
+        property TEXT NOT NULL DEFAULT 'vantagecircle',
+        PRIMARY KEY(day, query, platform, property));
     CREATE TABLE IF NOT EXISTS keyword_research(
         seed TEXT, source TEXT, keyword TEXT, volume INTEGER, kd REAL,
         cpc REAL, competition REAL, intent TEXT, serp_features TEXT,
@@ -175,6 +206,13 @@ def init_db():
     if cols and "property" not in cols:
         con.execute("ALTER TABLE rank_snapshots ADD COLUMN property "
                     "TEXT NOT NULL DEFAULT 'vantagecircle'")
+    # v3 migration: the four LLM tables gained a `property` column so
+    # Vantage Circle and Vantage Fit are tracked as separate projects
+    for table in ("llm_snapshots", "volumes", "discovered", "silent"):
+        cols = [r[1] for r in con.execute(f"PRAGMA table_info({table})")]
+        if cols and "property" not in cols:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN property "
+                        "TEXT NOT NULL DEFAULT 'vantagecircle'")
     return con
 
 

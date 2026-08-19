@@ -3,15 +3,19 @@
 llm_visibility.py — weekly brand-visibility tracker across ChatGPT, Claude, Gemini, Perplexity.
 
 Port of llm-keyword-tracker/llm_track.py writing into the shared seo_suite.db
-(table llm_snapshots). Reads prompts from prompts.csv, asks each LLM via the
-DataForSEO AI Optimization API, detects brand mentions and citations, and
-stores dated snapshots.
+(table llm_snapshots). Tracks two separate projects — Vantage Circle and
+Vantage Fit — each with its own prompts file, competitor brand set, and
+domain (see LLM_PROPERTIES in common.py). Asks each LLM via the DataForSEO
+AI Optimization API, detects brand mentions and citations, and stores dated
+snapshots.
 
 Usage:
-    python3 llm_visibility.py              # run all prompts on all platforms, save + report
-    python3 llm_visibility.py --dry-run    # show what would run; no API calls, no cost
-    python3 llm_visibility.py --limit 2    # only the first 2 prompts (cheap smoke test)
-    python3 llm_visibility.py --report     # no API calls; show share-of-voice trend from DB
+    python3 llm_visibility.py                            # Vantage Circle (default)
+    python3 llm_visibility.py --property vantagefit      # Vantage Fit
+    python3 llm_visibility.py --property all             # both projects
+    python3 llm_visibility.py --dry-run                  # no API calls, no cost
+    python3 llm_visibility.py --limit 2                  # first 2 prompts (smoke test)
+    python3 llm_visibility.py --report                   # share-of-voice trend from DB
 """
 import argparse
 import json
@@ -21,15 +25,16 @@ import time
 from datetime import date
 from pathlib import Path
 
-from common import DB_PATH, dfs_post, init_db, load_env, supabase_upsert
+from common import DB_PATH, LLM_PROPERTIES, dfs_post, init_db, load_env, supabase_upsert
 
 HERE = Path(__file__).parent
-PROMPTS_CSV = HERE / "prompts.csv"
+
+# Backward-compatible aliases (Vantage Circle) for dashboard.py / old scripts.
+BRANDS = LLM_PROPERTIES["vantagecircle"]["brands"]
+MY_DOMAIN = LLM_PROPERTIES["vantagecircle"]["domain"]
+PROMPTS_CSV = HERE / LLM_PROPERTIES["vantagecircle"]["prompts_csv"]
 
 # ---- edit these ------------------------------------------------------------
-BRANDS = ["vantage circle", "bonusly", "kudos", "achievers", "awardco",
-          "nectar", "motivosity", "o.c. tanner", "workhuman"]
-MY_DOMAIN = "vantagecircle.com"      # used to detect citations of your site
 PLATFORMS = ["chat_gpt", "perplexity"]  # claude/gemini dropped 2026-07-27 to halve cost — re-add anytime
 MODELS = {"chat_gpt": "gpt-5.5",     # pinned for comparable runs over time
           "claude": "claude-sonnet-4-6",
@@ -80,61 +85,54 @@ def ask_llm(platform, prompt):
     return extract(result)
 
 
-def detect_mentions(answer):
+def detect_mentions(answer, brands):
     # strip dots so "O.C. Tanner", "OC Tanner" etc. all match one brand entry
     low = answer.lower().replace(".", "")
     return {b: bool(re.search(r"(?<![a-z])" + re.escape(b.lower().replace(".", ""))
                               + r"(?![a-z])", low))
-            for b in BRANDS}
+            for b in brands}
 
 
-def report(con):
+def report(con, cfg, prop):
     days = [r[0] for r in con.execute(
-        "SELECT DISTINCT day FROM llm_snapshots ORDER BY day DESC LIMIT 8")]
+        "SELECT DISTINCT day FROM llm_snapshots WHERE property=? "
+        "ORDER BY day DESC LIMIT 8", (prop,))]
     if not days:
-        print("No data yet. Run the tracker first.")
+        print(f"No data yet for {cfg['label']}. Run the tracker first.")
         return
     for day in days:
-        print(f"\n=== {day} — share of voice (% of prompts mentioning each brand) ===")
+        print(f"\n=== {day} — {cfg['label']} share of voice "
+              "(% of prompts mentioning each brand) ===")
         for platform in PLATFORMS:
             rows = con.execute(
-                "SELECT mentions, cited_mine FROM llm_snapshots WHERE day=? AND platform=?",
-                (day, platform)).fetchall()
+                "SELECT mentions, cited_mine FROM llm_snapshots "
+                "WHERE day=? AND platform=? AND property=?",
+                (day, platform, prop)).fetchall()
             if not rows:
                 continue
             n = len(rows)
-            sov = {b: sum(json.loads(m).get(b, False) for m, _ in rows) / n * 100 for b in BRANDS}
+            sov = {b: sum(json.loads(m).get(b, False) for m, _ in rows) / n * 100
+                   for b in cfg["brands"]}
             cited = sum(c for _, c in rows) / n * 100
             top = "  ".join(f"{b}: {v:.0f}%" for b, v in sov.items() if v > 0) or "—"
             print(f"  {platform:11s} {top}   | your site cited: {cited:.0f}%")
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--report", action="store_true")
-    args = ap.parse_args()
-
-    con = init_db()
-    if args.report:
-        report(con)
-        return
-
-    prompts = [l.strip() for l in open(PROMPTS_CSV, encoding="utf-8")
+def run_property(con, prop, args):
+    cfg = LLM_PROPERTIES[prop]
+    prompts_csv = HERE / cfg["prompts_csv"]
+    prompts = [l.strip() for l in open(prompts_csv, encoding="utf-8")
                if l.strip() and not l.startswith("#")]
     if args.limit:
         prompts = prompts[:args.limit]
     total = len(prompts) * len(PLATFORMS)
-    print(f"{len(prompts)} prompts x {len(PLATFORMS)} platforms = {total} API calls"
-          f"  (~${total * 0.01:.2f} max)")
+    print(f"\n### {cfg['label']} ({prop}) — {len(prompts)} prompts x "
+          f"{len(PLATFORMS)} platforms = {total} API calls (~${total * 0.01:.2f} max)")
     if args.dry_run:
         for p in prompts:
             print("  -", p)
         return
 
-    load_env()
     today = date.today().isoformat()
     done = 0
     rows = []
@@ -152,11 +150,11 @@ def main():
             except Exception as e:
                 print(f"ERROR {platform} | {prompt[:40]}: {e}", file=sys.stderr)
                 continue
-            mentions = detect_mentions(answer)
-            cited = any(MY_DOMAIN in u for u in links)
-            con.execute("INSERT OR REPLACE INTO llm_snapshots VALUES (?,?,?,?,?,?,?)",
+            mentions = detect_mentions(answer, cfg["brands"])
+            cited = any(cfg["domain"] in u for u in links)
+            con.execute("INSERT OR REPLACE INTO llm_snapshots VALUES (?,?,?,?,?,?,?,?)",
                         (today, platform, prompt, json.dumps(mentions),
-                         int(cited), json.dumps(links), answer))
+                         int(cited), json.dumps(links), answer, prop))
             con.commit()
             rows.append({
                 "day": today,
@@ -166,6 +164,7 @@ def main():
                 "cited_mine": int(cited),
                 "links": json.dumps(links),
                 "answer": answer,
+                "property": prop,
             })
             done += 1
             found = " ".join(b for b, m in mentions.items() if m) or "—"
@@ -176,7 +175,35 @@ def main():
             break
     print(f"\nSaved {done}/{total} results to {DB_PATH.name}")
     supabase_upsert("llm_snapshots", rows)
-    report(con)
+    report(con, cfg, prop)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--property", choices=list(LLM_PROPERTIES) + ["all"],
+                    default="vantagecircle")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--report", action="store_true")
+    args = ap.parse_args()
+
+    con = init_db()
+    props = list(LLM_PROPERTIES) if args.property == "all" else [args.property]
+
+    if args.report:
+        for prop in props:
+            report(con, LLM_PROPERTIES[prop], prop)
+        return
+
+    if args.dry_run:
+        for prop in props:
+            run_property(con, prop, args)
+        return
+
+    load_env()
+    for prop in props:
+        run_property(con, prop, args)
 
 
 if __name__ == "__main__":

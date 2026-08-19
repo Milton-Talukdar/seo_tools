@@ -39,22 +39,23 @@ function jsonError(message, status = 500) {
   return Response.json({ error: message }, { status, headers: { "Content-Type": "application/json" } });
 }
 
-const YOU = "vantage circle";
+const YOU = "vantage circle";  // summary card tracks the VC project
 const NOT_FOUND = 101;
-const BRANDS = [
-  "vantage circle",
-  "bonusly",
-  "kudos",
-  "achievers",
-  "awardco",
-  "nectar",
-  "motivosity",
-  "o.c. tanner",
-  "workhuman",
-];
 const PROPERTIES = {
-  vantagecircle: { label: "Vantage Circle", domain: "vantagecircle.com" },
-  vantagefit: { label: "Vantage Fit", domain: "vantagefit.io" },
+  vantagecircle: {
+    label: "Vantage Circle",
+    domain: "vantagecircle.com",
+    you: "vantage circle",
+    brands: ["vantage circle", "bonusly", "kudos", "achievers", "awardco",
+             "nectar", "motivosity", "o.c. tanner", "workhuman"],
+  },
+  vantagefit: {
+    label: "Vantage Fit",
+    domain: "vantagefit.io",
+    you: "vantage fit",
+    brands: ["vantage fit", "personify health", "virgin pulse", "wellable",
+             "limeade", "incentfit", "wellsteps", "sonic boom", "woliba"],
+  },
 };
 
 // ---------------------------------------------------------------- /api/summary
@@ -132,7 +133,7 @@ async function handleSummary(env) {
   const [rankBlock, backlinkRows, llmDayRow, freshDayRow, compSnaps] = await Promise.all([
     rankSummary(env),
     sbFetch(env, "/backlink_snapshots?select=*&order=day.desc&limit=2"),
-    sbFetch(env, "/llm_snapshots?select=day&order=day.desc&limit=1"),
+    sbFetch(env, "/llm_snapshots?select=day&property=eq.vantagecircle&order=day.desc&limit=1"),
     sbFetch(env, "/freshness_scores?select=day&order=day.desc&limit=1"),
     sbFetch(
       env,
@@ -144,7 +145,7 @@ async function handleSummary(env) {
     (async () => {
       if (!llmDayRow.length) return { day: null, count: 0, sov: 0 };
       const day = llmDayRow[0].day;
-      const answers = await sbFetch(env, `/llm_snapshots?select=mentions&day=eq.${day}`);
+      const answers = await sbFetch(env, `/llm_snapshots?select=mentions&day=eq.${day}&property=eq.vantagecircle`);
       let you = 0;
       for (const a of answers) {
         const m = JSON.parse(a.mentions || "{}");
@@ -297,38 +298,46 @@ async function handleBacklinks(env) {
 }
 
 // ------------------------------------------------------------------- /api/llm
-async function handleLlm(env) {
+async function handleLlm(env, url) {
+  const property = url.searchParams.get("property") || "vantagecircle";
+  const cfg = PROPERTIES[property] || PROPERTIES.vantagecircle;
+  const brands = cfg.brands;
+  const p = `&property=eq.${encodeURIComponent(property)}`;
+
   // Trend only needs day+mentions; skip prompt/answer (the heavy columns)
   // and cap history at 180 days to keep the payload small.
   const cutoff = new Date(Date.now() - 180 * 86400000).toISOString().split("T")[0];
   const allRows = await sbFetch(
     env,
-    `/llm_snapshots?select=day,mentions&day=gte.${cutoff}&order=day.desc`
+    `/llm_snapshots?select=day,mentions&day=gte.${cutoff}${p}&order=day.desc`
   );
 
   const trend = {};
   for (const r of allRows) {
     const day = r.day;
     trend[day] ||= { day, total: 0 };
-    for (const b of BRANDS) {
+    for (const b of brands) {
       trend[day][b] ||= 0;
     }
     const m = JSON.parse(r.mentions || "{}");
     trend[day].total += 1;
-    for (const b of BRANDS) {
+    for (const b of brands) {
       if (m[b]) trend[day][b] += 1;
     }
   }
   const trendArray = Object.values(trend).sort((a, b) => b.day.localeCompare(a.day));
 
-  const dayRows = await sbFetch(env, "/llm_snapshots?select=day&order=day.desc&limit=1");
+  const dayRows = await sbFetch(
+    env,
+    `/llm_snapshots?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc&limit=1`
+  );
   let latest = [];
   let latestDay = null;
   if (dayRows.length) {
     latestDay = dayRows[0].day;
     latest = await sbFetch(
       env,
-      `/llm_snapshots?select=day,platform,prompt,mentions,cited_mine,answer&day=eq.${latestDay}&order=prompt,platform`
+      `/llm_snapshots?select=day,platform,prompt,mentions,cited_mine,answer&day=eq.${latestDay}${p}&order=prompt,platform`
     );
   }
 
@@ -338,38 +347,55 @@ async function handleLlm(env) {
     byPrompt[r.prompt].push(r);
   }
 
-  const volDayRow = await sbFetch(env, "/volumes?select=day&order=day.desc&limit=1");
+  const volDayRow = await sbFetch(
+    env,
+    `/volumes?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc&limit=1`
+  );
   let volumes = [];
   if (volDayRow.length) {
     volumes = await sbFetch(
       env,
-      `/volumes?select=keyword,ai_search_volume,trend_json&day=eq.${volDayRow[0].day}&order=ai_search_volume.desc&limit=200`
+      `/volumes?select=keyword,ai_search_volume,trend_json&day=eq.${volDayRow[0].day}${p}&order=ai_search_volume.desc&limit=200`
     );
   }
 
   const discovered = await sbFetch(
     env,
-    "/discovered?select=query,platform,ai_search_volume,seed&order=ai_search_volume.desc&limit=40"
+    `/discovered?select=query,platform,ai_search_volume,seed&property=eq.${encodeURIComponent(property)}&order=ai_search_volume.desc&limit=40`
   );
 
-  const silentDayRow = await sbFetch(env, "/silent?select=day&order=day.desc&limit=1");
+  const silentDayRow = await sbFetch(
+    env,
+    `/silent?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc&limit=1`
+  );
   let silent = { day: null, count: 0, previous_count: 0, rows: [] };
   if (silentDayRow.length) {
     const day = silentDayRow[0].day;
-    const prevDayRow = await sbFetch(env, `/silent?select=day&order=day.desc&limit=2`);
+    const prevDayRow = await sbFetch(
+      env,
+      `/silent?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc&limit=2`
+    );
     let previousCount = 0;
     if (prevDayRow.length > 1 && prevDayRow[1].day !== day) {
-      const prevRows = await sbFetch(env, `/silent?select=query&day=eq.${prevDayRow[1].day}`);
+      const prevRows = await sbFetch(
+        env,
+        `/silent?select=query&day=eq.${prevDayRow[1].day}${p}`
+      );
       previousCount = prevRows.length;
     }
     const rows = await sbFetch(
       env,
-      `/silent?select=query,platform,ai_search_volume&day=eq.${day}&order=ai_search_volume.desc`
+      `/silent?select=query,platform,ai_search_volume&day=eq.${day}${p}&order=ai_search_volume.desc`
     );
     silent = { day, count: rows.length, previous_count: previousCount, rows };
   }
 
   return {
+    property,
+    label: cfg.label,
+    domain: cfg.domain,
+    brands,
+    you: cfg.you,
     trend: trendArray,
     latest_day: latestDay,
     by_prompt: byPrompt,
@@ -531,7 +557,7 @@ async function cacheSet(env, key, value, ttl) {
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v7:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v8:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
@@ -560,7 +586,7 @@ export default {
         if (route === "summary") result = await handleSummary(env);
         else if (route === "rank") result = await handleRank(env, url);
         else if (route === "backlinks") result = await handleBacklinks(env);
-        else if (route === "llm") result = await handleLlm(env);
+        else if (route === "llm") result = await handleLlm(env, url);
         else if (route === "freshness") result = await handleFreshness(env, url);
         else if (route === "competitor") result = await handleCompetitor(env, url);
         else if (route === "snapshots") return await handleSnapshots(env, url);

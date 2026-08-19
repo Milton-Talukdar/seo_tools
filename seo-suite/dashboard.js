@@ -5,8 +5,6 @@
     vantagecircle: { label: 'Vantage Circle', domain: 'vantagecircle.com' },
     vantagefit: { label: 'Vantage Fit', domain: 'vantagefit.io' },
   };
-  const YOU = 'vantage circle';
-  const BRANDS = ['vantage circle', 'bonusly', 'kudos', 'achievers', 'awardco', 'nectar', 'motivosity', 'o.c. tanner', 'workhuman'];
   const NOT_FOUND = 101;
   const INTENT_SHORT = { informational: 'info', navigational: 'nav', commercial: 'com', transactional: 'trans' };
   const COMPETITOR_TYPES = [
@@ -334,95 +332,131 @@
   }
 
   // ---------------------------------------------------------------- LLM visibility
-  function brandChips(mentionsJson) {
+  function brandChips(mentionsJson, brands, you) {
     let m = {};
     try { m = JSON.parse(mentionsJson || '{}'); } catch (e) {}
-    const found = BRANDS.filter(function (b) { return m[b]; });
+    const found = brands.filter(function (b) { return m[b]; });
     if (!found.length) return '<span class="chip none">no brands</span>';
-    return found.map(function (b) { return '<span class="chip ' + (b === YOU ? 'you' : '') + '">' + esc(b) + '</span>'; }).join(' ');
+    return found.map(function (b) { return '<span class="chip ' + (b === you ? 'you' : '') + '">' + esc(b) + '</span>'; }).join(' ');
+  }
+
+  function renderLlmProp(data) {
+    const brands = data.brands || [];
+    const you = data.you;
+    let html = '';
+
+    // SOV trend
+    if (data.trend && data.trend.length) {
+      const head = brands.map(function (b) { return '<th>' + esc(b) + (b === you ? ' (you)' : '') + '</th>'; }).join('');
+      const body = data.trend.map(function (row) {
+        const cells = brands.map(function (b) {
+          const got = row[b] || 0;
+          const total = row.total || 1;
+          const pct = total ? Math.round((got / total) * 100) : 0;
+          const cls = b === you ? 'bar you' : 'bar';
+          return '<td><div class="' + cls + '"><div style="width:' + pct + '%"></div></div><span class="sub">' + pct + '%</span></td>';
+        }).join('');
+        return '<tr><td><b>' + esc(row.day) + '</b></td>' + cells + '</tr>';
+      }).join('');
+      html += '<h2>AI share of voice trend</h2><div class="card"><table><tr><th>run date</th>' + head + '</tr>' + body + '</table>' +
+        '<p class="sub">% of prompt × platform answers mentioning each brand.</p></div>';
+    }
+
+    // Volumes
+    if (data.volumes && data.volumes.length) {
+      const rows = data.volumes.map(function (r) {
+        let spark = '';
+        try {
+          const months = JSON.parse(r.trend_json || '[]');
+          const vals = months.slice(-12).map(function (m) { return m.ai_search_volume || 0; });
+          const mx = Math.max.apply(null, vals.concat([1]));
+          spark = '<span class="spark">' + vals.map(function (v) { return '<i style="height:' + Math.max(1, Math.round(v / mx * 18)) + 'px"></i>'; }).join('') + '</span>';
+        } catch (e) { spark = '<span class="sub">—</span>'; }
+        return '<tr><td>' + esc(r.keyword) + '</td><td class="vol">' + fmtNum(r.ai_search_volume) + '</td><td>' + spark + '</td></tr>';
+      }).join('');
+      html += '<h2>AI search volume — your seed keywords</h2><div class="card"><table>' +
+        '<tr><th>keyword</th><th>AI searches/mo</th><th>12-month trend</th></tr>' + rows + '</table>' +
+        '<p class="sub">How often each phrase is typed into AI tools per month (US). Updated monthly.</p></div>';
+    }
+
+    // Discovered prompts
+    if (data.discovered && data.discovered.length) {
+      const rows = data.discovered.map(function (r) {
+        return '<tr><td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
+          '<td class="vol">' + fmtNum(r.ai_search_volume) + '</td></tr>';
+      }).join('');
+      html += '<h2>Discovered prompts — what people really ask AI</h2><div class="card"><table>' +
+        '<tr><th>question</th><th>platform</th><th>AI searches/mo</th></tr>' + rows + '</table>' +
+        '<p class="sub">Real user questions from the LLM Mentions database matched to your seeds.</p></div>';
+    }
+
+    // Silent citations
+    if (data.silent && data.silent.rows && data.silent.rows.length) {
+      const trend = data.silent.previous_count ? ' · was ' + fmtNum(data.silent.previous_count) + ' at previous check' : '';
+      const rows = data.silent.rows.map(function (r) {
+        return '<tr><td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
+          '<td class="vol">' + fmtNum(r.ai_search_volume) + '</td></tr>';
+      }).join('');
+      html += '<h2>Silent citations — your content, no brand credit <span class="sub">(' + esc(String(data.silent.count)) + ' found' + esc(trend) + ')</span></h2>' +
+        '<div class="card"><table><tr><th>query</th><th>platform</th><th>AI searches/mo</th></tr>' + rows + '</table>' +
+        '<p class="sub">AI answers that cite ' + esc(data.domain || 'your domain') + ' as a source but never name your brand. Checked monthly.</p></div>';
+    }
+
+    // Latest run
+    if (data.by_prompt && Object.keys(data.by_prompt).length) {
+      html += '<h2>Latest LLM run — ' + esc(data.latest_day || '—') + '</h2>';
+      for (const [prompt, entries] of Object.entries(data.by_prompt)) {
+        const chips = entries.map(function (e) {
+          return '<div><span class="plat">' + esc(e.platform) + '</span> ' + brandChips(e.mentions, brands, you) +
+            (e.cited_mine ? ' <span class="chip cite">your site cited</span>' : '') + '</div>';
+        }).join('');
+        const answers = entries.map(function (e) {
+          return '<div><span class="plat">' + esc(e.platform) + '</span></div>' +
+            '<div class="answer">' + esc((e.answer || '').slice(0, 4000)) + '</div>';
+        }).join('');
+        html += '<div class="card"><b>' + esc(prompt) + '</b>' + chips +
+          '<details><summary>show raw answers</summary>' + answers + '</details></div>';
+      }
+    }
+
+    return html;
   }
 
   async function loadLLM() {
     const el = document.getElementById('panel-llm');
     try {
-      const data = await api('llm');
-      let html = '';
+      const [circle, fit] = await Promise.all([
+        api('llm?property=vantagecircle'),
+        api('llm?property=vantagefit'),
+      ]);
 
-      // SOV trend
-      if (data.trend && data.trend.length) {
-        const head = BRANDS.map(function (b) { return '<th>' + esc(b) + (b === YOU ? ' (you)' : '') + '</th>'; }).join('');
-        const body = data.trend.map(function (row) {
-          const cells = BRANDS.map(function (b) {
-            const got = row[b] || 0;
-            const total = row.total || 1;
-            const pct = total ? Math.round((got / total) * 100) : 0;
-            const cls = b === YOU ? 'bar you' : 'bar';
-            return '<td><div class="' + cls + '"><div style="width:' + pct + '%"></div></div><span class="sub">' + pct + '%</span></td>';
-          }).join('');
-          return '<tr><td><b>' + esc(row.day) + '</b></td>' + cells + '</tr>';
-        }).join('');
-        html += '<h2>AI share of voice trend</h2><div class="card"><table><tr><th>run date</th>' + head + '</tr>' + body + '</table>' +
-          '<p class="sub">% of prompt × platform answers mentioning each brand.</p></div>';
+      const tabs = [
+        { key: 'vantagecircle', label: 'Vantage Circle', data: circle },
+        { key: 'vantagefit', label: 'Vantage Fit', data: fit },
+      ];
+
+      const anyData = tabs.some(function (t) {
+        return (t.data.trend && t.data.trend.length) ||
+          (t.data.by_prompt && Object.keys(t.data.by_prompt).length) ||
+          (t.data.volumes && t.data.volumes.length);
+      });
+      if (!anyData) {
+        el.innerHTML = '<div class="card">No LLM visibility data available yet.</div>';
+        return;
       }
 
-      // Volumes
-      if (data.volumes && data.volumes.length) {
-        const rows = data.volumes.map(function (r) {
-          let spark = '';
-          try {
-            const months = JSON.parse(r.trend_json || '[]');
-            const vals = months.slice(-12).map(function (m) { return m.ai_search_volume || 0; });
-            const mx = Math.max.apply(null, vals.concat([1]));
-            spark = '<span class="spark">' + vals.map(function (v) { return '<i style="height:' + Math.max(1, Math.round(v / mx * 18)) + 'px"></i>'; }).join('') + '</span>';
-          } catch (e) { spark = '<span class="sub">—</span>'; }
-          return '<tr><td>' + esc(r.keyword) + '</td><td class="vol">' + fmtNum(r.ai_search_volume) + '</td><td>' + spark + '</td></tr>';
-        }).join('');
-        html += '<h2>AI search volume — your seed keywords</h2><div class="card"><table>' +
-          '<tr><th>keyword</th><th>AI searches/mo</th><th>12-month trend</th></tr>' + rows + '</table>' +
-          '<p class="sub">How often each phrase is typed into AI tools per month (US). Updated monthly.</p></div>';
-      }
+      const tabHtml = '<div class="prop-tabs no-print">' + tabs.map(function (t, i) {
+        return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-prop="' + esc(t.key) + '">' + esc(t.label) + '</button>';
+      }).join('') + '</div>';
 
-      // Discovered prompts
-      if (data.discovered && data.discovered.length) {
-        const rows = data.discovered.map(function (r) {
-          return '<tr><td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
-            '<td class="vol">' + fmtNum(r.ai_search_volume) + '</td></tr>';
-        }).join('');
-        html += '<h2>Discovered prompts — what people really ask AI</h2><div class="card"><table>' +
-          '<tr><th>question</th><th>platform</th><th>AI searches/mo</th></tr>' + rows + '</table>' +
-          '<p class="sub">Real user questions from the LLM Mentions database matched to your seeds.</p></div>';
-      }
+      const panelsHtml = tabs.map(function (t, i) {
+        const body = renderLlmProp(t.data) || '<div class="card">No data for this project yet — the tracker runs biweekly.</div>';
+        return '<div class="llm-prop' + (i === 0 ? ' active' : '') + '" id="llm-' + esc(t.key) + '">' + body + '</div>';
+      }).join('');
 
-      // Silent citations
-      if (data.silent && data.silent.rows && data.silent.rows.length) {
-        const trend = data.silent.previous_count ? ' · was ' + fmtNum(data.silent.previous_count) + ' at previous check' : '';
-        const rows = data.silent.rows.map(function (r) {
-          return '<tr><td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
-            '<td class="vol">' + fmtNum(r.ai_search_volume) + '</td></tr>';
-        }).join('');
-        html += '<h2>Silent citations — your content, no brand credit <span class="sub">(' + esc(String(data.silent.count)) + ' found' + esc(trend) + ')</span></h2>' +
-          '<div class="card"><table><tr><th>query</th><th>platform</th><th>AI searches/mo</th></tr>' + rows + '</table>' +
-          '<p class="sub">AI answers that cite vantagecircle.com as a source but never name your brand. Checked monthly.</p></div>';
-      }
-
-      // Latest run
-      if (data.by_prompt && Object.keys(data.by_prompt).length) {
-        html += '<h2>Latest LLM run — ' + esc(data.latest_day || '—') + '</h2>';
-        for (const [prompt, entries] of Object.entries(data.by_prompt)) {
-          const chips = entries.map(function (e) {
-            return '<div><span class="plat">' + esc(e.platform) + '</span> ' + brandChips(e.mentions) +
-              (e.cited_mine ? ' <span class="chip cite">your site cited</span>' : '') + '</div>';
-          }).join('');
-          const answers = entries.map(function (e) {
-            return '<div><span class="plat">' + esc(e.platform) + '</span></div>' +
-              '<div class="answer">' + esc((e.answer || '').slice(0, 4000)) + '</div>';
-          }).join('');
-          html += '<div class="card"><b>' + esc(prompt) + '</b>' + chips +
-            '<details><summary>show raw answers</summary>' + answers + '</details></div>';
-        }
-      }
-
-      el.innerHTML = (html || '<div class="card">No LLM visibility data available yet.</div>') + stampHtml(data.latest_day);
+      const latestDay = tabs.map(function (t) { return t.data.latest_day; }).filter(Boolean).sort().pop();
+      el.innerHTML = '<h2>LLM Visibility · share of voice</h2>' + tabHtml + panelsHtml + stampHtml(latestDay);
+      initPropTabs(el, 'llm-prop');
     } catch (e) {
       el.innerHTML = errorCard(e.message);
     }
@@ -868,8 +902,9 @@
       tab.addEventListener('click', function () {
         var key = tab.getAttribute('data-prop');
         tabs.forEach(function (t) { t.classList.toggle('active', t === tab); });
+        var prefix = propClass.replace(/-prop$/, '') + '-';
         props.forEach(function (p) {
-          p.classList.toggle('active', p.id === (propClass === 'rank-prop' ? 'rank-' : 'comp-') + key);
+          p.classList.toggle('active', p.id === prefix + key);
         });
       });
     });

@@ -64,13 +64,13 @@ jobs:
         env:
           DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
           DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
-        run: python3 llm_visibility.py
+        run: python3 llm_visibility.py --property vantagecircle && python3 llm_visibility.py --property vantagefit
 
       - name: Monthly LLM discovery (volumes + real prompts)
         env:
           DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
           DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
-        run: python3 llm_discover.py   # self-throttled: runs at most once per 25 days
+        run: python3 llm_discover.py --property vantagecircle && python3 llm_discover.py --property vantagefit   # self-throttled: at most once per 25 days per property
 
       - name: Monthly keyword enrichment (volume + KD + intent)
         env:

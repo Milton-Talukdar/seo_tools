@@ -13,8 +13,8 @@ into this DB).
 
 - `rank_track.py` — Google US top-100 rank tracker, multi-property (config constants at the top)
 - `backlinks.py` — backlink totals + new/lost refdomain counts
-- `llm_visibility.py` — LLM share-of-voice tracker (port of llm_track.py)
-- `llm_discover.py` — monthly job: AI search volumes + real user questions (self-throttled to once per 25 days, `--force` to override)
+- `llm_visibility.py` — LLM share-of-voice tracker, multi-property (`--property vantagecircle|vantagefit|all`)
+- `llm_discover.py` — monthly job: AI search volumes + real user questions (self-throttled to once per 25 days per property, `--force` to override)
 - `enrich.py` — monthly job: refreshes volume + KD + intent in keyword_meta (self-throttled to once per 25 days, `--force` to override)
 - `freshness.py` — monthly job: crawl configured sitemaps, score pages on age/depth/rank, and flag decay risk + recommended action
 - `freshness_sitemaps.csv` — sitemap config: `property,page_type,sitemap_url`
@@ -23,7 +23,9 @@ into this DB).
 - `common.py` — shared plumbing (credentials, API POST, DB schema, dashboard CSS)
 - `keywords.csv` — Vantage Circle tracked keywords, `keyword,tag` per line; `#` lines are comments (seeded with the 994-keyword Ahrefs export)
 - `keywords-fit.csv` — Vantage Fit tracked keywords, same format
-- `prompts.csv` / `seeds.csv` — LLM prompts and discovery seeds
+- `prompts.csv` / `seeds.csv` — LLM prompts and discovery seeds (Vantage Circle)
+- `prompts-fit.csv` / `seeds-fit.csv` — same for Vantage Fit (corporate wellness)
+- LLM per-property config (domain, brands, file mapping) lives in `LLM_PROPERTIES` in `common.py`; the Supabase `property` column migration is `supabase_schema_patch_v3.sql` (run once in the SQL editor)
 - `.env` — DataForSEO credentials (never commit; falls back to `../llm-keyword-tracker/.env`)
 - `seo_suite.db` — SQLite results, created on first run
 
@@ -37,8 +39,10 @@ python3 rank_track.py                # full run: all properties, all keywords
 python3 rank_track.py --report       # movers + top-3/10/50 counts, no API calls
 python3 backlinks.py                 # backlink snapshot (~$0.02)
 python3 backlinks.py --report        # net change + notable losses, no API calls
-python3 llm_visibility.py            # LLM share-of-voice run
-python3 llm_discover.py --force      # volumes + real-prompt mining (~$1.45)
+python3 llm_visibility.py            # LLM share-of-voice run (Vantage Circle)
+python3 llm_visibility.py --property vantagefit   # Vantage Fit run
+python3 llm_visibility.py --property all          # both projects
+python3 llm_discover.py --force      # volumes + real-prompt mining (~$1.45 per project)
 python3 enrich.py --dry-run          # preview volume/KD/intent refresh cost
 python3 enrich.py --force            # refresh keyword_meta now (~$0.85)
 python3 freshness.py --dry-run       # preview which pages would be crawled
@@ -67,11 +71,11 @@ Manual runs (Actions tab → Run workflow) always execute everything.
 
 - Rank tracking: ~$0.0006/keyword → 994 keywords weekly ≈ $0.60/run ≈ **$31/yr**
 - Backlinks: two calls weekly — pennies (≈ $1/yr)
-- LLM visibility + discovery: ≈ **$26/yr** (unchanged from llm-keyword-tracker)
+- LLM visibility + discovery: ≈ **$52/yr** (two projects × the original single-project cost)
 - Keyword enrichment (volume/KD/intent): ≈ $0.85/month ≈ **$10/yr**
 - Content freshness / decay: **free** (sitemap/page crawl only; optional GSC traffic data is also free)
 
-Total run rate ≈ $68/yr on the existing DataForSEO subscription.
+Total run rate ≈ $94/yr on the existing DataForSEO subscription.
 
 ## Optional: Google Search Console traffic data
 
