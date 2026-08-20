@@ -938,7 +938,7 @@ async function handleLlmGaps(env, url) {
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v10:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v11:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
