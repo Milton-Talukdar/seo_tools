@@ -572,6 +572,7 @@ const CACHE_TTL = {
   annotations: 60,
   freshness_queue: 60,
   llm_gaps: 1800,
+  llm_prompts: 1800,
 };
 
 function cacheEnabled(env) {
@@ -935,10 +936,61 @@ async function handleLlmGaps(env, url) {
   return { property, day, you, gaps: gaps.slice(0, 50) };
 }
 
+// ---------------------------------------------------------------- /api/llm_prompts
+async function handleLlmPrompts(env, url) {
+  const property = url.searchParams.get("property") || "vantagecircle";
+  const cfg = PROPERTIES[property] || PROPERTIES.vantagecircle;
+  const you = cfg.you;
+  const competitorBrands = cfg.brands.filter((b) => b !== you);
+
+  const dayRows = await sbFetch(
+    env,
+    `/llm_snapshots?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc&limit=1`
+  );
+  if (!dayRows.length) return { property, day: null, prompts: [] };
+  const day = dayRows[0].day;
+  const rows = await sbFetch(
+    env,
+    `/llm_snapshots?select=prompt,platform,mentions,cited_mine&day=eq.${day}&property=eq.${encodeURIComponent(property)}`
+  );
+
+  const byPrompt = {};
+  for (const r of rows) {
+    byPrompt[r.prompt] ||= [];
+    byPrompt[r.prompt].push(r);
+  }
+
+  const prompts = [];
+  for (const [prompt, entries] of Object.entries(byPrompt)) {
+    let youMentioned = false;
+    const competitorsMentioned = new Set();
+    const platforms = [];
+    let citedCount = 0;
+    for (const e of entries) {
+      platforms.push(e.platform);
+      if (e.cited_mine) citedCount++;
+      let m = {};
+      try { m = JSON.parse(e.mentions || "{}"); } catch (err) {}
+      if (m[you]) youMentioned = true;
+      for (const b of competitorBrands) if (m[b]) competitorsMentioned.add(b);
+    }
+    prompts.push({
+      prompt,
+      platforms: [...new Set(platforms)],
+      you_mentioned: youMentioned,
+      competitors_mentioned: [...competitorsMentioned],
+      cited_count: citedCount,
+      total_answers: entries.length,
+    });
+  }
+  prompts.sort((a, b) => a.prompt.localeCompare(b.prompt));
+  return { property, day, you, prompts };
+}
+
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v11:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v12:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
@@ -976,6 +1028,7 @@ export default {
         else if (route === "annotations") result = await handleAnnotations(env, request);
         else if (route === "freshness_queue") result = await handleFreshnessQueue(env, request, url);
         else if (route === "llm_gaps") result = await handleLlmGaps(env, url);
+        else if (route === "llm_prompts") result = await handleLlmPrompts(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));

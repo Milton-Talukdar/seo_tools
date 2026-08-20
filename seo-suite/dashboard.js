@@ -622,6 +622,59 @@
     }
   }
 
+  // ---------------------------------------------------------------- llm prompts inventory
+  async function loadLlmPrompts() {
+    const el = document.getElementById('panel-llm-prompts');
+    try {
+      const [circle, fit] = await Promise.all([
+        api('llm_prompts?property=vantagecircle').catch(function () { return { prompts: [] }; }),
+        api('llm_prompts?property=vantagefit').catch(function () { return { prompts: [] }; }),
+      ]);
+
+      const tabs = [
+        { key: 'vantagecircle', label: 'Vantage Circle', data: circle },
+        { key: 'vantagefit', label: 'Vantage Fit', data: fit },
+      ];
+
+      const anyData = tabs.some(function (t) { return t.data.prompts && t.data.prompts.length; });
+      if (!anyData) {
+        el.innerHTML = '<h2>LLM Prompts</h2><div class="card">No LLM prompt data available yet.</div>';
+        return;
+      }
+
+      const tabHtml = '<div class="prop-tabs no-print">' + tabs.map(function (t, i) {
+        return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-prop="' + esc(t.key) + '">' + esc(t.label) + '</button>';
+      }).join('') + '</div>';
+
+      const panelsHtml = tabs.map(function (t, i) {
+        const rows = (t.data.prompts || []).map(function (p) {
+          const comps = (p.competitors_mentioned || []).map(function (c) {
+            return '<span class="chip">' + esc(c) + '</span>';
+          }).join(' ');
+          const youChip = p.you_mentioned ? '<span class="chip you">you</span>' : '<span class="chip none">not mentioned</span>';
+          const cited = p.cited_count ? '<span class="chip cite">cited ' + p.cited_count + '/' + p.total_answers + '</span>' : '<span class="sub">—</span>';
+          return '<tr>' +
+            '<td>' + esc(p.prompt) + '</td>' +
+            '<td>' + esc((p.platforms || []).join(', ')) + '</td>' +
+            '<td>' + youChip + '</td>' +
+            '<td>' + (comps || '<span class="sub">—</span>') + '</td>' +
+            '<td>' + cited + '</td></tr>';
+        }).join('');
+        const body = '<div class="card"><table class="llm-prompts-table">' +
+          '<thead><tr><th>Prompt</th><th>Platforms</th><th>Your brand</th><th>Competitors mentioned</th><th>Cited</th></tr></thead>' +
+          '<tbody>' + (rows || '<tr><td colspan="5" class="sub">No prompts yet.</td></tr>') + '</tbody></table>' +
+          '<p class="sub">' + esc(String(t.data.prompts.length)) + ' prompts tracked · latest run ' + esc(t.data.day || '—') + '</p></div>';
+        return '<div class="llm-prompts-prop' + (i === 0 ? ' active' : '') + '" id="llm-prompts-' + esc(t.key) + '">' + body + '</div>';
+      }).join('');
+
+      const latestDay = tabs.map(function (t) { return t.data.day; }).filter(Boolean).sort().pop();
+      el.innerHTML = '<h2>LLM Prompts · inventory</h2>' + tabHtml + panelsHtml + stampHtml(latestDay);
+      initPropTabs(el, 'llm-prompts-prop');
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
   function initLlmInteractions() {
     // Copy brief buttons
     document.querySelectorAll('.gap-brief').forEach(function (btn) {
@@ -1486,6 +1539,7 @@
       loadBacklinks(),
       loadFreshness(),
       loadLLM(),
+      loadLlmPrompts(),
       loadCompetitor(),
     ]).catch(function (e) {
       console.error('Dashboard load error:', e);
