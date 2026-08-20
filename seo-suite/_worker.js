@@ -41,6 +41,46 @@ async function sbFetchAll(env, path, pageSize = 1000) {
   return out;
 }
 
+async function sbPost(env, table, body, prefer = "return=representation") {
+  const url = `${env.SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { ...sbHeaders(env), "Content-Type": "application/json", Prefer: prefer },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Supabase ${res.status}: ${text}`);
+  }
+  if (prefer === "return=minimal") return { ok: true };
+  return res.json();
+}
+
+async function sbPatch(env, table, filters, body) {
+  const qs = Object.entries(filters)
+    .map(([k, v]) => `${encodeURIComponent(k)}=eq.${encodeURIComponent(v)}`)
+    .join("&");
+  const url = `${env.SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}?${qs}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { ...sbHeaders(env), "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Supabase ${res.status}: ${text}`);
+  }
+  return { ok: true };
+}
+
+function todayISO() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function daysAgoISO(n) {
+  return new Date(Date.now() - n * 86400000).toISOString().split("T")[0];
+}
+
 function jsonError(message, status = 500) {
   return Response.json({ error: message }, { status, headers: { "Content-Type": "application/json" } });
 }
@@ -367,7 +407,7 @@ async function handleLlm(env, url) {
 
   const discovered = await sbFetch(
     env,
-    `/discovered?select=query,platform,ai_search_volume,seed&property=eq.${encodeURIComponent(property)}&order=ai_search_volume.desc&limit=40`
+    `/discovered?select=query,platform,ai_search_volume,seed,prev_volume,volume_delta&property=eq.${encodeURIComponent(property)}&order=ai_search_volume.desc&limit=40`
   );
 
   const silentDayRow = await sbFetch(
@@ -526,6 +566,11 @@ const CACHE_TTL = {
   freshness: 1800,
   competitor: 1800,
   snapshots: 3600,
+  actions: 300,
+  cannibalization: 1800,
+  annotations: 60,
+  freshness_queue: 60,
+  llm_gaps: 1800,
 };
 
 function cacheEnabled(env) {
@@ -560,10 +605,339 @@ async function cacheSet(env, key, value, ttl) {
   });
 }
 
+async function rankDropActions(env) {
+  const cutoff = daysAgoISO(14);
+  const actions = [];
+  for (const prop of Object.keys(PROPERTIES)) {
+    const rows = await sbFetchAll(
+      env,
+      `/rank_snapshots?select=keyword,position,url,day&property=eq.${encodeURIComponent(prop)}&day=gte.${cutoff}&order=day.desc`
+    );
+    const byDay = {};
+    for (const r of rows) {
+      byDay[r.day] ||= [];
+      byDay[r.day].push(r);
+    }
+    const days = Object.entries(byDay)
+      .map(([day, arr]) => ({ day, count: arr.length }))
+      .sort((a, b) => b.day.localeCompare(a.day));
+    if (days.length < 2) continue;
+    const fullest = Math.max(...days.map((d) => d.count));
+    const valid = days.filter((d) => d.count >= fullest / 2).map((d) => d.day);
+    const latest = valid[0];
+    const previous = valid[1];
+    if (!latest || !previous) continue;
+    const prev = {};
+    for (const r of byDay[previous]) prev[r.keyword] = r.position;
+    for (const r of byDay[latest]) {
+      const p = prev[r.keyword];
+      if (p === undefined) continue;
+      const curPos = r.position === null ? NOT_FOUND : r.position;
+      const prevPos = p === null ? NOT_FOUND : p;
+      const delta = prevPos - curPos; // positive = moved up, negative = dropped
+      const fellOutOfTop10 = prevPos <= 10 && curPos > 10;
+      const bigDrop = delta <= -10;
+      if (fellOutOfTop10 || bigDrop) {
+        actions.push({
+          type: "rank_drop",
+          priority: fellOutOfTop10 ? 100 : 85,
+          title: `“${r.keyword}” fell ${Math.abs(delta)} positions`,
+          detail: `${PROPERTIES[prop].label}: ${prevPos === NOT_FOUND ? ">100" : prevPos} → ${curPos === NOT_FOUND ? ">100" : curPos}${r.url ? " · " + r.url : ""}`,
+          link: `#/rank/${prop}`,
+          data: { property: prop, keyword: r.keyword, previous: prevPos, current: curPos, url: r.url },
+        });
+      }
+    }
+  }
+  return actions;
+}
+
+async function freshnessActions(env) {
+  const dayRow = await sbFetch(env, "/freshness_scores?select=day&order=day.desc&limit=1");
+  if (!dayRow.length) return [];
+  const day = dayRow[0].day;
+  const rows = await sbFetch(
+    env,
+    `/freshness_scores?select=url,property,action,reason,decay_risk,priority_score,target_keyword,position,volume,traffic_drop_pct&day=eq.${day}&action=neq.MONITOR&decay_risk=in.(high,medium)&order=priority_score.desc&limit=8`
+  );
+  return rows.map((r) => ({
+    type: "freshness",
+    priority: Math.round(r.priority_score || 50),
+    title: `${r.action} · ${r.url.replace(/^https?:\/\//, "").replace(/\/$/, "").slice(0, 60)}`,
+    detail: `${r.reason}${r.target_keyword ? " · keyword: " + r.target_keyword : ""}${r.traffic_drop_pct ? " · traffic " + Math.round(r.traffic_drop_pct) + "%" : ""}`,
+    link: "#/freshness",
+    data: r,
+  }));
+}
+
+async function llmLossActions(env) {
+  const actions = [];
+  for (const [prop, cfg] of Object.entries(PROPERTIES)) {
+    const dayRows = await sbFetch(
+      env,
+      `/llm_snapshots?select=day&property=eq.${encodeURIComponent(prop)}&order=day.desc&limit=2`
+    );
+    if (dayRows.length < 2) continue;
+    const [latestDay, prevDay] = [dayRows[0].day, dayRows[1].day];
+    const [latest, prev] = await Promise.all([
+      sbFetch(env, `/llm_snapshots?select=prompt,mentions&day=eq.${latestDay}&property=eq.${encodeURIComponent(prop)}`),
+      sbFetch(env, `/llm_snapshots?select=prompt,mentions&day=eq.${prevDay}&property=eq.${encodeURIComponent(prop)}`),
+    ]);
+    const you = cfg.you;
+    const wasMentioned = {};
+    for (const r of prev) {
+      let m = {};
+      try { m = JSON.parse(r.mentions || "{}"); } catch (e) {}
+      if (m[you]) wasMentioned[r.prompt] = true;
+    }
+    const nowMentioned = new Set();
+    for (const r of latest) {
+      let m = {};
+      try { m = JSON.parse(r.mentions || "{}"); } catch (e) {}
+      if (m[you]) nowMentioned.add(r.prompt);
+    }
+    for (const prompt of Object.keys(wasMentioned)) {
+      if (!nowMentioned.has(prompt)) {
+        actions.push({
+          type: "llm_loss",
+          priority: 75,
+          title: `AI answers stopped mentioning ${cfg.label}`,
+          detail: `Prompt: “${prompt}”`,
+          link: `#/llm/${prop}`,
+          data: { property: prop, prompt },
+        });
+      }
+    }
+  }
+  return actions;
+}
+
+async function backlinkLossActions(env) {
+  const rows = await sbFetch(
+    env,
+    `/refdomain_events?select=day,domain,rank&event=eq.lost&day=gte.${daysAgoISO(14)}&order=rank.desc&limit=10`
+  );
+  return rows.map((r) => ({
+    type: "backlink_lost",
+    priority: 60 + (r.rank || 0) / 20,
+    title: `Lost referring domain: ${r.domain}`,
+    detail: `DR ${r.rank || "—"} · ${r.day}`,
+    link: "#/backlinks",
+    data: r,
+  }));
+}
+
+async function competitorChangeActions(env) {
+  const rows = await sbFetch(
+    env,
+    `/competitor_changes?select=timestamp,property,competitor,url,change_type,title&change_type=in.(title_change,h1_change,meta_change)&order=timestamp.desc&limit=5`
+  );
+  return rows.map((r) => ({
+    type: "competitor_change",
+    priority: 55,
+    title: `${PROPERTIES[r.property]?.label || r.property} competitor changed ${r.change_type.replace("_", " ")}`,
+    detail: `${r.competitor} · ${r.title || r.url}`,
+    link: `#/competitor/${r.property}`,
+    data: r,
+  }));
+}
+
+async function handleActions(env) {
+  const [rankDrops, fresh, llmLoss, lostRefs, compChanges] = await Promise.all([
+    rankDropActions(env),
+    freshnessActions(env),
+    llmLossActions(env),
+    backlinkLossActions(env),
+    competitorChangeActions(env),
+  ]);
+  const all = [...rankDrops, ...fresh, ...llmLoss, ...lostRefs, ...compChanges];
+  all.sort((a, b) => b.priority - a.priority);
+  return { actions: all.slice(0, 20), generated_at: new Date().toISOString() };
+}
+
+// ---------------------------------------------------------------- /api/cannibalization
+async function handleCannibalization(env, url) {
+  const property = url.searchParams.get("property") || "vantagecircle";
+  const cutoff = daysAgoISO(14);
+  const rows = await sbFetchAll(
+    env,
+    `/rank_snapshots?select=keyword,position,url,day&property=eq.${encodeURIComponent(property)}&day=gte.${cutoff}&order=day.desc`
+  );
+  const byDay = {};
+  for (const r of rows) {
+    byDay[r.day] ||= [];
+    byDay[r.day].push(r);
+  }
+  const days = Object.entries(byDay)
+    .map(([day, arr]) => ({ day, count: arr.length }))
+    .sort((a, b) => b.day.localeCompare(a.day));
+  if (!days.length) return { property, dilution: [], url_flips: [], missing_url: [] };
+  const fullest = Math.max(...days.map((d) => d.count));
+  const valid = days.filter((d) => d.count >= fullest / 2).map((d) => d.day);
+  const latest = valid[0];
+  const previous = valid[1];
+  const latestRows = byDay[latest] || [];
+
+  // URL dilution: same URL ranking for 5+ keywords
+  const byUrl = {};
+  for (const r of latestRows) {
+    if (!r.url) continue;
+    byUrl[r.url] ||= [];
+    byUrl[r.url].push(r.keyword);
+  }
+  const dilution = Object.entries(byUrl)
+    .filter(([_, kws]) => kws.length >= 5)
+    .map(([u, kws]) => ({ url: u, keyword_count: kws.length, keywords: kws }))
+    .sort((a, b) => b.keyword_count - a.keyword_count);
+
+  // Keyword URL flips between latest and previous
+  const urlFlips = [];
+  const missingUrl = [];
+  if (previous) {
+    const prevByKw = {};
+    for (const r of byDay[previous]) if (r.url) prevByKw[r.keyword] = r.url;
+    for (const r of latestRows) {
+      const prevUrl = prevByKw[r.keyword];
+      if (!prevUrl) continue;
+      if (r.url && r.url !== prevUrl) {
+        urlFlips.push({ keyword: r.keyword, previous_url: prevUrl, current_url: r.url });
+      } else if (!r.url && prevUrl) {
+        missingUrl.push({ keyword: r.keyword, previous_url: prevUrl });
+      }
+    }
+  }
+
+  return { property, latest_day: latest, previous_day: previous, dilution, url_flips: urlFlips, missing_url: missingUrl };
+}
+
+// ---------------------------------------------------------------- /api/annotations
+async function handleAnnotations(env, request) {
+  if (request.method === "GET") {
+    const url = new URL(request.url);
+    const days = parseInt(url.searchParams.get("days") || "90", 10);
+    const since = daysAgoISO(days);
+    const rows = await sbFetch(env, `/annotations?select=*&day=gte.${since}&order=day.desc`);
+    return { annotations: rows };
+  }
+  if (request.method === "POST") {
+    const body = await request.json();
+    const row = {
+      day: body.day || todayISO(),
+      label: body.label || "",
+      note: body.note || "",
+      created_at: new Date().toISOString(),
+    };
+    const inserted = await sbPost(env, "annotations", row);
+    return { inserted };
+  }
+  return jsonError("Method not allowed", 405);
+}
+
+// ---------------------------------------------------------------- /api/freshness_queue
+async function handleFreshnessQueue(env, request, url) {
+  if (request.method === "GET") {
+    const property = url.searchParams.get("property");
+    const dayRow = await sbFetch(env, "/freshness_scores?select=day&order=day.desc&limit=1");
+    if (!dayRow.length) return { property, queue: [] };
+    const day = dayRow[0].day;
+    let path = `/freshness_scores?select=url,property,action,reason,decay_risk,priority_score,target_keyword,position,volume,traffic_drop_pct,title&day=eq.${day}&action=neq.MONITOR`;
+    if (property) path += `&property=eq.${encodeURIComponent(property)}`;
+    path += "&order=priority_score.desc&limit=100";
+    const rows = await sbFetch(env, path);
+    const urls = rows.map((r) => r.url).filter(Boolean);
+    let statusByUrl = {};
+    if (urls.length) {
+      const statusPath = `/freshness_status?select=url,status,owner,note,updated_at&url=in.(${urls.map(encodeURIComponent).join(",")})`;
+      const statusRows = await sbFetch(env, statusPath);
+      for (const s of statusRows) statusByUrl[s.url] = s;
+    }
+    const queue = rows.map((r) => ({ ...r, status: statusByUrl[r.url] || null }));
+    return { property, day, queue };
+  }
+  if (request.method === "PATCH") {
+    const body = await request.json();
+    if (!body.url) return jsonError("url required", 400);
+    const updates = {};
+    if (body.status !== undefined) updates.status = body.status;
+    if (body.owner !== undefined) updates.owner = body.owner;
+    if (body.note !== undefined) updates.note = body.note;
+    updates.updated_at = new Date().toISOString();
+    // Upsert via resolution=merge-duplicates on conflict of primary key
+    await sbPost(env, "freshness_status", { url: body.url, ...updates }, "resolution=merge-duplicates");
+    return { ok: true };
+  }
+  return jsonError("Method not allowed", 405);
+}
+
+// ---------------------------------------------------------------- /api/llm_gaps
+async function handleLlmGaps(env, url) {
+  const property = url.searchParams.get("property") || "vantagecircle";
+  const cfg = PROPERTIES[property] || PROPERTIES.vantagecircle;
+  const you = cfg.you;
+  const competitorBrands = cfg.brands.filter((b) => b !== you);
+
+  const dayRows = await sbFetch(
+    env,
+    `/llm_snapshots?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc&limit=1`
+  );
+  if (!dayRows.length) return { property, gaps: [] };
+  const day = dayRows[0].day;
+  const rows = await sbFetch(
+    env,
+    `/llm_snapshots?select=prompt,platform,mentions,answer,cited_mine&day=eq.${day}&property=eq.${encodeURIComponent(property)}`
+  );
+
+  // Load discovered volume hints for these prompts
+  const prompts = [...new Set(rows.map((r) => r.prompt))];
+  const volByQuery = {};
+  if (prompts.length) {
+    const disc = await sbFetch(
+      env,
+      `/discovered?select=query,ai_search_volume,volume_delta&property=eq.${encodeURIComponent(property)}&query=in.(${prompts.map(encodeURIComponent).join(",")})`
+    );
+    for (const d of disc) volByQuery[d.query] = d;
+  }
+
+  const byPrompt = {};
+  for (const r of rows) {
+    byPrompt[r.prompt] ||= [];
+    byPrompt[r.prompt].push(r);
+  }
+
+  const gaps = [];
+  for (const [prompt, entries] of Object.entries(byPrompt)) {
+    let youMentioned = false;
+    const competitorsMentioned = new Set();
+    const platforms = new Set();
+    let sampleAnswer = "";
+    for (const e of entries) {
+      platforms.add(e.platform);
+      if (!sampleAnswer && e.answer) sampleAnswer = e.answer.slice(0, 300);
+      let m = {};
+      try { m = JSON.parse(e.mentions || "{}"); } catch (err) {}
+      if (m[you]) youMentioned = true;
+      for (const b of competitorBrands) if (m[b]) competitorsMentioned.add(b);
+    }
+    if (!youMentioned && competitorsMentioned.size) {
+      const v = volByQuery[prompt] || {};
+      gaps.push({
+        prompt,
+        platforms: [...platforms],
+        competitors_mentioned: [...competitorsMentioned],
+        estimated_volume: v.ai_search_volume || null,
+        volume_delta: v.volume_delta || null,
+        sample_answer: sampleAnswer,
+      });
+    }
+  }
+  gaps.sort((a, b) => (b.estimated_volume || 0) - (a.estimated_volume || 0));
+  return { property, day, you, gaps: gaps.slice(0, 50) };
+}
+
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v9:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v10:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
@@ -596,6 +970,11 @@ export default {
         else if (route === "freshness") result = await handleFreshness(env, url);
         else if (route === "competitor") result = await handleCompetitor(env, url);
         else if (route === "snapshots") return await handleSnapshots(env, url);
+        else if (route === "actions") result = await handleActions(env);
+        else if (route === "cannibalization") result = await handleCannibalization(env, url);
+        else if (route === "annotations") result = await handleAnnotations(env, request);
+        else if (route === "freshness_queue") result = await handleFreshnessQueue(env, request, url);
+        else if (route === "llm_gaps") result = await handleLlmGaps(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));

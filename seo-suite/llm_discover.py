@@ -128,13 +128,18 @@ def mine_questions(con, seeds, prop, today):
                 "WHERE query=? AND property=?", (q, prop)).fetchone()
             if existing:
                 first_seen = existing[1]
-                con.execute("UPDATE discovered SET ai_search_volume=?, last_seen=? "
-                            "WHERE query=? AND property=?",
-                            (max(existing[0], vol), today, q, prop))
+                prev = existing[0] or 0
+                new_vol = max(existing[0], vol)
+                delta = new_vol - prev
+                con.execute("UPDATE discovered SET ai_search_volume=?, prev_volume=?, "
+                            "volume_delta=?, last_seen=? WHERE query=? AND property=?",
+                            (new_vol, prev, delta, today, q, prop))
             else:
                 first_seen = today
-                con.execute("INSERT INTO discovered VALUES (?,?,?,?,?,?,?)",
-                            (q, platform, vol, seed, today, today, prop))
+                prev = 0
+                delta = vol
+                con.execute("INSERT INTO discovered VALUES (?,?,?,?,?,?,?,?,?)",
+                            (q, platform, vol, seed, today, today, prop, prev, delta))
             rows.append({
                 "query": q,
                 "platform": platform,
@@ -143,6 +148,8 @@ def mine_questions(con, seeds, prop, today):
                 "first_seen": first_seen,
                 "last_seen": today,
                 "property": prop,
+                "prev_volume": prev,
+                "volume_delta": delta,
             })
             kept += 1
     return kept, rows

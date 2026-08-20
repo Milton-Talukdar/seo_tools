@@ -69,8 +69,14 @@
     return { posHtml: posHtml, deltaHtml: '<td class="num">' + chip + prevS + '</td>', change: String(d) };
   }
 
-  async function api(path) {
-    const res = await fetch('/api/' + path);
+  async function api(path, opts) {
+    opts = opts || {};
+    const init = { method: opts.method || 'GET', headers: {} };
+    if (opts.body) {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(opts.body);
+    }
+    const res = await fetch('/api/' + path, init);
     if (!res.ok) {
       const text = await res.text().catch(function () { return 'unknown error'; });
       throw new Error(res.status + ' ' + text);
@@ -87,10 +93,56 @@
   }
 
   // ---------------------------------------------------------------- summary
+  const ACTION_TYPE_META = {
+    rank_drop: { icon: '▼', cls: 'action-rank_drop' },
+    freshness: { icon: '◷', cls: 'action-freshness' },
+    llm_loss: { icon: '◈', cls: 'action-llm_loss' },
+    backlink_lost: { icon: '◉', cls: 'action-backlink_lost' },
+    competitor_change: { icon: '◆', cls: 'action-competitor_change' },
+  };
+
+  function renderActionDigest(actions, generatedAt) {
+    if (!actions || !actions.length) {
+      return '<div class="card action-digest"><b>Urgent actions</b><p class="sub">No urgent actions this week.</p></div>';
+    }
+    const sorted = actions.slice().sort(function (a, b) { return (b.priority || 0) - (a.priority || 0); });
+    const top = sorted.slice(0, 12);
+    const rows = top.map(function (a) {
+      const meta = ACTION_TYPE_META[a.type] || { icon: '•', cls: 'action-other' };
+      return '<div class="action-row ' + esc(meta.cls) + '" data-link="' + esc(a.link || '') + '">' +
+        '<span class="action-badge">' + esc(meta.icon) + '</span>' +
+        '<div class="action-body"><div class="action-title">' + esc(a.title) + '</div>' +
+        '<div class="action-detail sub">' + esc(a.detail || '') + '</div></div></div>';
+    }).join('');
+    return '<div class="card action-digest"><b>Urgent actions</b>' + rows +
+      '<p class="sub">Generated ' + esc(generatedAt || '—') + '</p></div>';
+  }
+
+  function renderAnnotations(list) {
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = (list || []).map(function (a) {
+      return '<div class="annotation-row">' +
+        '<span class="annotation-day">' + esc(a.day || '') + '</span>' +
+        '<span class="annotation-label chip">' + esc(a.label || '') + '</span>' +
+        '<span class="annotation-note">' + esc(a.note || '') + '</span></div>';
+    }).join('');
+    return '<div class="card annotations-card"><b>Annotations</b>' +
+      '<form class="annotation-form">' +
+      '<input type="date" name="day" value="' + esc(today) + '" required>' +
+      '<input type="text" name="label" placeholder="Label" required>' +
+      '<textarea name="note" placeholder="Note…" rows="1"></textarea>' +
+      '<button type="submit">Add annotation</button></form>' +
+      '<div class="annotation-list">' + (rows || '<p class="sub">No annotations yet.</p>') + '</div></div>';
+  }
+
   async function loadSummary() {
     const el = document.getElementById('panel-summary');
     try {
-      const data = await api('summary');
+      const [data, actionsData, annotationsData] = await Promise.all([
+        api('summary'),
+        api('actions').catch(function () { return { actions: [], generated_at: '' }; }),
+        api('annotations?days=90').catch(function () { return { annotations: [] }; }),
+      ]);
       const cards = [];
 
       // rank KPIs across properties
@@ -150,14 +202,84 @@
         return '<div class="kpi"><div class="num">' + c[0] + '</div><div class="label">' + c[1] + '</div></div>';
       }).join('');
 
-      el.innerHTML = '<h2>Executive summary</h2><div class="kpis">' + kpiHtml + '</div>' + stampHtml(latestDay);
+      el.innerHTML = '<h2>Executive summary</h2><div class="kpis">' + kpiHtml + '</div>' +
+        renderActionDigest(actionsData.actions, actionsData.generated_at) +
+        renderAnnotations(annotationsData.annotations) +
+        stampHtml(latestDay);
+
+      // Action digest navigation
+      el.querySelectorAll('.action-row').forEach(function (row) {
+        row.addEventListener('click', function () {
+          const link = row.getAttribute('data-link');
+          if (link && link.startsWith('#')) location.hash = link;
+        });
+      });
+
+      // Annotation form
+      const form = el.querySelector('.annotation-form');
+      if (form) {
+        form.addEventListener('submit', async function (e) {
+          e.preventDefault();
+          const day = form.querySelector('[name="day"]').value;
+          const label = form.querySelector('[name="label"]').value;
+          const note = form.querySelector('[name="note"]').value;
+          try {
+            await api('annotations', { method: 'POST', body: { day: day, label: label, note: note } });
+            const fresh = await api('annotations?days=90');
+            const listEl = el.querySelector('.annotation-list');
+            if (listEl) {
+              const rows = (fresh.annotations || []).map(function (a) {
+                return '<div class="annotation-row">' +
+                  '<span class="annotation-day">' + esc(a.day || '') + '</span>' +
+                  '<span class="annotation-label chip">' + esc(a.label || '') + '</span>' +
+                  '<span class="annotation-note">' + esc(a.note || '') + '</span></div>';
+              }).join('');
+              listEl.innerHTML = rows || '<p class="sub">No annotations yet.</p>';
+            }
+            form.reset();
+            form.querySelector('[name="day"]').value = new Date().toISOString().slice(0, 10);
+          } catch (err) {
+            alert('Failed to add annotation: ' + err.message);
+          }
+        });
+      }
     } catch (e) {
       el.innerHTML = errorCard(e.message);
     }
   }
 
   // ---------------------------------------------------------------- rank tracker
-  function renderRankProp(data) {
+  function renderCannibalization(c) {
+    if (!c) return '';
+    const hasDilution = c.dilution && c.dilution.length;
+    const hasFlips = c.url_flips && c.url_flips.length;
+    if (!hasDilution && !hasFlips) return '';
+
+    let dilutionRows = '';
+    if (hasDilution) {
+      dilutionRows = c.dilution.map(function (r) {
+        return '<tr><td><a href="' + esc(r.url) + '" target="_blank">' + esc(r.url.replace(/^https?:\/\//, '').slice(0, 70)) + '</a></td>' +
+          '<td class="num">' + esc(String(r.keyword_count)) + '</td>' +
+          '<td class="sub">' + esc((r.keywords || []).join(', ')) + '</td></tr>';
+      }).join('');
+    }
+
+    let flipRows = '';
+    if (hasFlips) {
+      flipRows = c.url_flips.map(function (r) {
+        return '<tr><td>' + esc(r.keyword) + '</td>' +
+          '<td class="sub"><a href="' + esc(r.previous_url) + '" target="_blank">' + esc(r.previous_url.replace(/^https?:\/\//, '').slice(0, 50)) + '</a></td>' +
+          '<td class="sub"><a href="' + esc(r.current_url) + '" target="_blank">' + esc(r.current_url.replace(/^https?:\/\//, '').slice(0, 50)) + '</a></td></tr>';
+      }).join('');
+    }
+
+    return '<div class="card cannibalization"><b>Cannibalization check · ' + esc(c.latest_day || '—') + '</b>' +
+      (hasDilution ? '<table><thead><tr><th>Pages ranking for 5+ keywords</th><th>Keywords</th><th>Keyword list</th></tr></thead><tbody>' + dilutionRows + '</tbody></table>' : '') +
+      (hasFlips ? '<table><thead><tr><th>Keyword that changed URL</th><th>Previous URL</th><th>Current URL</th></tr></thead><tbody>' + flipRows + '</tbody></table>' : '') +
+      '</div>';
+  }
+
+  function renderRankProp(data, cannibalization) {
     const cfg = PROPERTIES[data.property] || { label: data.property, domain: data.property };
     const tags = (data.meta && data.meta.tags) ? data.meta.tags : [];
     const tagOptions = tags.map(function (t) { return '<option value="' + esc(t.toLowerCase()) + '">' + esc(t) + '</option>'; }).join('');
@@ -245,20 +367,22 @@
       (data.previous_day ? ', previous: ' + esc(data.previous_day) : '') +
       '. Δ = position change vs previous check (gains on top when sorted). Trend = weekly positions, oldest to latest. Volume / KD / intent from keyword_meta. — = unranked or no data. ' +
       '<span class="no-print">Type to filter, pick a tag or quick filter, click a column header to sort.</span></p>' +
-      '</div></div>';
+      '</div>' + renderCannibalization(cannibalization) + '</div>';
   }
 
   async function loadRank() {
     const el = document.getElementById('panel-rank');
     try {
-      const [circle, fit] = await Promise.all([
+      const [circle, fit, canCircle, canFit] = await Promise.all([
         api('rank?property=vantagecircle'),
         api('rank?property=vantagefit'),
+        api('cannibalization?property=vantagecircle').catch(function () { return null; }),
+        api('cannibalization?property=vantagefit').catch(function () { return null; }),
       ]);
 
       const tabs = [
-        { key: 'vantagecircle', label: 'Vantage Circle', data: circle },
-        { key: 'vantagefit', label: 'Vantage Fit', data: fit },
+        { key: 'vantagecircle', label: 'Vantage Circle', data: circle, can: canCircle },
+        { key: 'vantagefit', label: 'Vantage Fit', data: fit, can: canFit },
       ];
 
       const anyData = tabs.some(function (t) { return t.data.keywords && t.data.keywords.length; });
@@ -272,7 +396,7 @@
       }).join('') + '</div>';
 
       const panelsHtml = tabs.map(function (t, i) {
-        return renderRankProp(t.data).replace('class="rank-prop"', 'class="rank-prop' + (i === 0 ? ' active' : '') + '"');
+        return renderRankProp(t.data, t.can).replace('class="rank-prop"', 'class="rank-prop' + (i === 0 ? ' active' : '') + '"');
       }).join('');
 
       const rankDay = [circle.latest_day, fit.latest_day].filter(Boolean).sort().pop();
@@ -340,7 +464,8 @@
     return found.map(function (b) { return '<span class="chip ' + (b === you ? 'you' : '') + '">' + esc(b) + '</span>'; }).join(' ');
   }
 
-  function renderLlmProp(data) {
+  function renderLlmProp(data, gapsData) {
+    const cfg = PROPERTIES[data.property] || { label: data.property, domain: data.property };
     const brands = data.brands || [];
     const you = data.you;
     let html = '';
@@ -360,6 +485,25 @@
       }).join('');
       html += '<h2>AI share of voice trend</h2><div class="card"><table><tr><th>run date</th>' + head + '</tr>' + body + '</table>' +
         '<p class="sub">% of prompt × platform answers mentioning each brand.</p></div>';
+    }
+
+    // Content gaps & briefs
+    if (gapsData && gapsData.gaps && gapsData.gaps.length) {
+      const gapRows = gapsData.gaps.map(function (g, idx) {
+        const competitors = (g.competitors_mentioned || []).join(', ');
+        const chips = (g.competitors_mentioned || []).map(function (c) {
+          return '<span class="chip ' + (c === you ? 'you' : '') + '">' + esc(c) + '</span>';
+        }).join(' ');
+        return '<tr data-property="' + esc(data.property) + '" data-prompt="' + esc(g.prompt) + '" data-competitors="' + esc(competitors) + '" data-volume="' + esc(String(g.estimated_volume || '')) + '">' +
+          '<td>' + esc(g.prompt) + '</td>' +
+          '<td>' + (chips || '<span class="sub">—</span>') + '</td>' +
+          '<td class="num">' + fmtNum(g.estimated_volume) + '</td>' +
+          '<td class="num delta ' + (g.volume_delta >= 0 ? 'up' : 'down') + '">' + (g.volume_delta >= 0 ? '+' : '') + fmtNum(g.volume_delta) + '</td>' +
+          '<td><button class="gap-brief" type="button">Copy brief</button></td></tr>';
+      }).join('');
+      html += '<h2>Content gaps & briefs</h2><div class="card"><table class="llm-gaps-table">' +
+        '<thead><tr><th>Prompt</th><th>Competitors mentioned</th><th>Est. AI searches/mo</th><th>Δ vs last</th><th></th></tr></thead><tbody>' + gapRows + '</tbody></table>' +
+        '<p class="sub">Questions where competitors appear in AI answers but your brand does not. Click “Copy brief” to build a content brief.</p></div>';
     }
 
     // Volumes
@@ -382,12 +526,24 @@
     // Discovered prompts
     if (data.discovered && data.discovered.length) {
       const rows = data.discovered.map(function (r) {
-        return '<tr><td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
-          '<td class="vol">' + fmtNum(r.ai_search_volume) + '</td></tr>';
+        const prev = r.prev_volume;
+        const delta = r.volume_delta;
+        let deltaHtml = '<span class="sub">—</span>';
+        if (delta !== null && delta !== undefined) {
+          deltaHtml = '<span class="delta ' + (delta >= 0 ? 'up' : 'down') + '">' + (delta >= 0 ? '+' : '') + fmtNum(delta) + '</span>';
+        } else if (prev !== null && prev !== undefined) {
+          deltaHtml = '<span class="sub">from ' + fmtNum(prev) + '</span>';
+        }
+        return '<tr data-volume="' + esc(String(r.ai_search_volume || 0)) + '" data-delta="' + esc(String(delta === null || delta === undefined ? '' : delta)) + '">' +
+          '<td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
+          '<td class="vol num">' + fmtNum(r.ai_search_volume) + '</td>' +
+          '<td class="num discovered-delta">' + deltaHtml + '</td></tr>';
       }).join('');
-      html += '<h2>Discovered prompts — what people really ask AI</h2><div class="card"><table>' +
-        '<tr><th>question</th><th>platform</th><th>AI searches/mo</th></tr>' + rows + '</table>' +
-        '<p class="sub">Real user questions from the LLM Mentions database matched to your seeds.</p></div>';
+      html += '<h2>Discovered prompts — what people really ask AI</h2><div class="card"><table class="discovered-table">' +
+        '<thead><tr><th>question</th><th>platform</th>' +
+        '<th class="sortable" data-sort="volume">AI searches/mo <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="delta">Δ vs last <span class="arrow"></span></th></tr></thead><tbody>' + rows + '</tbody></table>' +
+        '<p class="sub">Real user questions from the LLM Mentions database matched to your seeds. Click a column header to sort.</p></div>';
     }
 
     // Silent citations
@@ -425,20 +581,23 @@
   async function loadLLM() {
     const el = document.getElementById('panel-llm');
     try {
-      const [circle, fit] = await Promise.all([
+      const [circle, fit, gapsCircle, gapsFit] = await Promise.all([
         api('llm?property=vantagecircle'),
         api('llm?property=vantagefit'),
+        api('llm_gaps?property=vantagecircle').catch(function () { return { gaps: [] }; }),
+        api('llm_gaps?property=vantagefit').catch(function () { return { gaps: [] }; }),
       ]);
 
       const tabs = [
-        { key: 'vantagecircle', label: 'Vantage Circle', data: circle },
-        { key: 'vantagefit', label: 'Vantage Fit', data: fit },
+        { key: 'vantagecircle', label: 'Vantage Circle', data: circle, gaps: gapsCircle },
+        { key: 'vantagefit', label: 'Vantage Fit', data: fit, gaps: gapsFit },
       ];
 
       const anyData = tabs.some(function (t) {
         return (t.data.trend && t.data.trend.length) ||
           (t.data.by_prompt && Object.keys(t.data.by_prompt).length) ||
-          (t.data.volumes && t.data.volumes.length);
+          (t.data.volumes && t.data.volumes.length) ||
+          (t.gaps && t.gaps.gaps && t.gaps.gaps.length);
       });
       if (!anyData) {
         el.innerHTML = '<div class="card">No LLM visibility data available yet.</div>';
@@ -450,16 +609,84 @@
       }).join('') + '</div>';
 
       const panelsHtml = tabs.map(function (t, i) {
-        const body = renderLlmProp(t.data) || '<div class="card">No data for this project yet — the tracker runs biweekly.</div>';
+        const body = renderLlmProp(t.data, t.gaps) || '<div class="card">No data for this project yet — the tracker runs biweekly.</div>';
         return '<div class="llm-prop' + (i === 0 ? ' active' : '') + '" id="llm-' + esc(t.key) + '">' + body + '</div>';
       }).join('');
 
       const latestDay = tabs.map(function (t) { return t.data.latest_day; }).filter(Boolean).sort().pop();
       el.innerHTML = '<h2>LLM Visibility · share of voice</h2>' + tabHtml + panelsHtml + stampHtml(latestDay);
       initPropTabs(el, 'llm-prop');
+      initLlmInteractions();
     } catch (e) {
       el.innerHTML = errorCard(e.message);
     }
+  }
+
+  function initLlmInteractions() {
+    // Copy brief buttons
+    document.querySelectorAll('.gap-brief').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        var row = btn.closest('tr');
+        var prop = row ? row.getAttribute('data-property') : '';
+        var prompt = row ? row.getAttribute('data-prompt') : '';
+        var competitors = row ? row.getAttribute('data-competitors') : '';
+        var volume = row ? row.getAttribute('data-volume') : '';
+        var label = (PROPERTIES[prop] && PROPERTIES[prop].label) || prop || 'your brand';
+        var text = 'Brief: ' + (prompt || '') + '\nCompetitors mentioned: ' + (competitors || '') + '\nAngle: Explain why ' + label + ' is the better choice for this query. Cite comparison points from current AI answers.\nEstimated AI searches/mo: ' + fmtNum(volume);
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = btn.textContent;
+          btn.textContent = 'Copied';
+          setTimeout(function () { btn.textContent = orig; }, 1200);
+        } catch (err) {
+          alert('Could not copy brief: ' + err.message);
+        }
+      });
+    });
+
+    // Discovered table sorting
+    document.querySelectorAll('.discovered-table').forEach(function (table) {
+      var tbody = table.querySelector('tbody');
+      var ths = table.querySelectorAll('th.sortable');
+      if (!tbody || !ths.length) return;
+      var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+      var sortKey = 'volume', sortDir = -1;
+
+      function keyVal(r, k) {
+        var v = r.getAttribute('data-' + k);
+        return v === '' || v == null ? null : parseFloat(v);
+      }
+
+      function cmp(a, b) {
+        var va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;
+        if (vb === null) return -1;
+        if (va < vb) return -sortDir;
+        if (va > vb) return sortDir;
+        return 0;
+      }
+
+      function applySort() {
+        rows.sort(cmp);
+        rows.forEach(function (r) { tbody.appendChild(r); });
+        ths.forEach(function (th) {
+          var arr = th.querySelector('.arrow');
+          if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+        });
+      }
+
+      ths.forEach(function (th) {
+        th.addEventListener('click', function () {
+          var k = th.getAttribute('data-sort');
+          if (k === sortKey) { sortDir = -sortDir; }
+          else { sortKey = k; sortDir = -1; }
+          applySort();
+        });
+      });
+
+      applySort();
+    });
   }
 
   // ---------------------------------------------------------------- freshness
@@ -473,15 +700,39 @@
     return '<span class="chip ' + cls + '">' + esc(action) + '</span>';
   }
 
+  function freshnessQueueRow(r) {
+    const status = (r.status && r.status.status) || 'todo';
+    const owner = (r.status && r.status.owner) || '';
+    const note = (r.status && r.status.note) || '';
+    const display = ((r.title || r.url || '').replace(/^https?:\/\//, '')).slice(0, 70);
+    return '<tr data-url="' + esc(r.url) + '">' +
+      '<td><a href="' + esc(r.url) + '" target="_blank">' + esc(display) + '</a></td>' +
+      '<td>' + esc(r.property) + '</td>' +
+      '<td>' + actionChip(r.action) + '</td>' +
+      '<td>' + riskChip(r.decay_risk) + '</td>' +
+      '<td class="num">' + esc(String(r.priority_score)) + '</td>' +
+      '<td><input class="queue-owner" type="text" value="' + esc(owner) + '" placeholder="Owner"></td>' +
+      '<td><select class="queue-status">' +
+      '<option value="todo"' + (status === 'todo' ? ' selected' : '') + '>Todo</option>' +
+      '<option value="in_progress"' + (status === 'in_progress' ? ' selected' : '') + '>In progress</option>' +
+      '<option value="done"' + (status === 'done' ? ' selected' : '') + '>Done</option>' +
+      '<option value="ignored"' + (status === 'ignored' ? ' selected' : '') + '>Ignored</option>' +
+      '</select></td>' +
+      '<td><input class="queue-note" type="text" value="' + esc(note) + '" placeholder="Note"></td>' +
+      '<td><button class="queue-save" type="button">Save</button><span class="queue-saved sub">saved</span></td>' +
+      '</tr>';
+  }
+
   async function loadFreshness() {
     const el = document.getElementById('panel-freshness');
     try {
-      const data = await api('freshness');
+      const [data, qCircle, qFit] = await Promise.all([
+        api('freshness'),
+        api('freshness_queue?property=vantagecircle').catch(function () { return { queue: [] }; }),
+        api('freshness_queue?property=vantagefit').catch(function () { return { queue: [] }; }),
+      ]);
       const rows = data.rows || [];
-      if (!rows.length) {
-        el.innerHTML = '<h2>Content Freshness</h2><div class="card">No freshness data available yet.</div>';
-        return;
-      }
+      const queue = [].concat(qCircle.queue || [], qFit.queue || []);
 
       const total = rows.length;
       const highRisk = rows.filter(function (r) { return r.decay_risk === 'HIGH'; }).length;
@@ -501,20 +752,18 @@
         return '<div class="kpi"><div class="num">' + esc(c[1]) + '</div><div class="label">' + esc(c[0]) + '<br><span class="sub">' + esc(c[2]) + '</span></div></div>';
       }).join('') + '</div>';
 
-      const candidates = rows.filter(function (r) { return r.action !== 'MONITOR'; }).slice(0, 15);
-      let candidatesHtml = '';
-      if (candidates.length) {
-        const candRows = candidates.map(function (r) {
-          const display = ((r.title || r.url || '').replace(/^https?:\/\//, '')).slice(0, 65);
-          return '<tr><td><a href="' + esc(r.url) + '" target="_blank">' + esc(display) + '</a></td>' +
-            '<td>' + esc(r.property) + '</td><td>' + esc(String(r.age_days)) + '</td>' +
-            '<td>' + actionChip(r.action) + '</td><td>' + esc(String(r.priority_score)) + '</td>' +
-            '<td class="sub">' + esc(r.reason) + '</td></tr>';
-        }).join('');
-        candidatesHtml = '<div class="card"><b>Top action candidates</b><table>' +
-          '<thead><tr><th>Page</th><th>Property</th><th>Age</th><th>Action</th><th>Priority</th><th>Reason</th></tr></thead><tbody>' +
-          candRows + '</tbody></table></div>';
-      }
+      const queueTabs = ['All', 'Todo', 'In progress', 'Done', 'Ignored'];
+      const queueTabHtml = '<div class="queue-tabs no-print">' + queueTabs.map(function (t, i) {
+        return '<button class="queue-tab' + (i === 0 ? ' active' : '') + '" data-status="' + esc(t.toLowerCase().replace(/ /g, '_')) + '">' + esc(t) + '</button>';
+      }).join('') + '<span class="queue-count sub">' + esc(String(queue.length)) + ' items</span></div>';
+
+      const queueRows = queue.map(freshnessQueueRow).join('');
+      const queueHtml = '<div class="card queue-wrap">' +
+        '<b>Decay queue</b>' + queueTabHtml +
+        '<table class="queue-table"><thead><tr>' +
+        '<th>Page</th><th>Property</th><th>Action</th><th>Risk</th><th>Priority</th>' +
+        '<th>Owner</th><th>Status</th><th>Note</th><th></th>' +
+        '</tr></thead><tbody>' + (queueRows || '<tr><td colspan="9" class="sub">Queue is empty.</td></tr>') + '</tbody></table></div>';
 
       const properties = [...new Set(rows.map(function (r) { return r.property; }))].sort();
       const types = [...new Set(rows.map(function (r) { return r.page_type; }))].sort();
@@ -538,7 +787,7 @@
           '<td>' + actionChip(r.action) + '</td><td class="sub">' + esc(r.reason) + '</td></tr>';
       }).join('');
 
-      const tableHtml = '<div class="card freshness-wrap">' +
+      const tableHtml = '<details class="freshness-all"><summary>All pages</summary><div class="card freshness-wrap">' +
         '<div class="table-tools no-print freshness-tools">' +
         '<input class="freshness-search" type="search" placeholder="Search pages…">' +
         '<select class="freshness-property">' + opts(properties, 'properties') + '</select>' +
@@ -560,13 +809,66 @@
         '<th class="sortable" data-sort="volume">Vol <span class="arrow"></span></th>' +
         '<th class="sortable" data-sort="action">Action <span class="arrow"></span></th>' +
         '<th>Reason</th>' +
-        '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+        '</tr></thead><tbody>' + tableRows + '</tbody></table></div></details>';
 
-      el.innerHTML = '<h2>Content Freshness</h2>' + kpiHtml + candidatesHtml + tableHtml + stampHtml(data.day);
+      el.innerHTML = '<h2>Content Freshness</h2>' + kpiHtml + queueHtml + tableHtml + stampHtml(data.day);
       initFreshnessInteractions();
+      initFreshnessQueueInteractions();
     } catch (e) {
       el.innerHTML = errorCard(e.message);
     }
+  }
+
+  function initFreshnessQueueInteractions() {
+    var wrap = document.querySelector('.queue-wrap');
+    if (!wrap) return;
+    var tbody = wrap.querySelector('tbody');
+    var tabs = wrap.querySelectorAll('.queue-tab');
+    var count = wrap.querySelector('.queue-count');
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-url]'));
+
+    function applyFilter() {
+      var active = wrap.querySelector('.queue-tab.active');
+      var status = active ? active.getAttribute('data-status') : 'all';
+      var n = 0;
+      rows.forEach(function (r) {
+        var st = r.querySelector('.queue-status').value;
+        var ok = status === 'all' || st === status;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' items';
+    }
+
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        tabs.forEach(function (t) { t.classList.toggle('active', t === tab); });
+        applyFilter();
+      });
+    });
+
+    rows.forEach(function (r) {
+      var saveBtn = r.querySelector('.queue-save');
+      if (!saveBtn) return;
+      saveBtn.addEventListener('click', async function () {
+        var url = r.getAttribute('data-url');
+        var owner = r.querySelector('.queue-owner').value;
+        var status = r.querySelector('.queue-status').value;
+        var note = r.querySelector('.queue-note').value;
+        var saved = r.querySelector('.queue-saved');
+        try {
+          await api('freshness_queue', { method: 'PATCH', body: { url: url, status: status, owner: owner, note: note } });
+          if (saved) {
+            saved.style.display = 'inline';
+            setTimeout(function () { saved.style.display = ''; }, 1500);
+          }
+        } catch (err) {
+          alert('Save failed: ' + err.message);
+        }
+      });
+    });
+
+    applyFilter();
   }
 
   // ---------------------------------------------------------------- competitor tracker

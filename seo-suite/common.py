@@ -200,6 +200,12 @@ def init_db():
         traffic_drop_pct REAL, decay_score REAL, priority_score REAL,
         action TEXT, reason TEXT, last_crawled TEXT,
         PRIMARY KEY(day, url));
+    CREATE TABLE IF NOT EXISTS annotations(
+        id TEXT PRIMARY KEY, day TEXT, label TEXT, note TEXT,
+        created_at TEXT);
+    CREATE TABLE IF NOT EXISTS freshness_status(
+        url TEXT PRIMARY KEY, status TEXT, owner TEXT, note TEXT,
+        updated_at TEXT);
     """)
     # v2 migration: rank_snapshots gained a `property` column
     cols = [r[1] for r in con.execute("PRAGMA table_info(rank_snapshots)")]
@@ -213,6 +219,13 @@ def init_db():
         if cols and "property" not in cols:
             con.execute(f"ALTER TABLE {table} ADD COLUMN property "
                         "TEXT NOT NULL DEFAULT 'vantagecircle'")
+    # v4 migration: discovered gains previous-volume tracking; mutable
+    # team-workflow tables are added for annotations and decay queue status.
+    cols = [r[1] for r in con.execute("PRAGMA table_info(discovered)")]
+    if cols and "prev_volume" not in cols:
+        con.execute("ALTER TABLE discovered ADD COLUMN prev_volume INTEGER")
+    if cols and "volume_delta" not in cols:
+        con.execute("ALTER TABLE discovered ADD COLUMN volume_delta INTEGER")
     return con
 
 
