@@ -52,8 +52,9 @@ async function sbPost(env, table, body, prefer = "return=representation") {
     const text = await res.text().catch(() => "");
     throw new Error(`Supabase ${res.status}: ${text}`);
   }
-  if (prefer === "return=minimal") return { ok: true };
-  return res.json();
+  if (prefer === "return=minimal" || res.status === 204) return { ok: true };
+  const text = await res.text();
+  return text ? JSON.parse(text) : { ok: true };
 }
 
 async function sbPatch(env, table, filters, body) {
