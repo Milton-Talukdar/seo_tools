@@ -27,14 +27,6 @@ jobs:
           mkdir -p public
           cp index.html dashboard.js dashboard.css _worker.js public/
 
-      - name: Ensure Cloudflare Pages project exists
-        uses: cloudflare/wrangler-action@v3
-        continue-on-error: true
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages project create orbit --production-branch=main
-
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
