@@ -327,17 +327,6 @@
         '<td class="sub">' + (k.url ? '<a href="' + esc(k.url) + '" target="_blank" rel="noopener">' + esc(shortUrl) + '</a>' : '') + '</td></tr>';
     }).join('');
 
-    const tagStats = {};
-    data.keywords.forEach(function (k) {
-      if (!k.tag) return;
-      const s = (tagStats[k.tag] ||= { n: 0, top10: 0 });
-      s.n++;
-      if (k.position !== null && k.position !== undefined && k.position <= 10) s.top10++;
-    });
-    const tagSummary = Object.keys(tagStats).sort().map(function (t) {
-      return '<span class="chip tracked">' + esc(t) + ' · ' + tagStats[t].n + ' kw · ' + tagStats[t].top10 + ' top 10</span>';
-    }).join('');
-
     return '<div class="rank-prop" id="rank-' + esc(data.property) + '">' +
       '<div class="card">' +
       '<div class="table-tools no-print">' +
@@ -352,7 +341,6 @@
       '</span>' +
       '<button class="rank-export" type="button">Export CSV</button>' +
       '<span class="rank-count sub">' + esc(String(data.keywords.length)) + ' keywords</span></div>' +
-      (tagSummary ? '<div class="tag-summary">' + tagSummary + '</div>' : '') +
       '<table class="rank-table"><thead><tr>' +
       '<th class="sortable" data-sort="keyword">Keyword <span class="arrow"></span></th>' +
       '<th>Tag</th>' +
