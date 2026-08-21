@@ -1,6 +1,6 @@
 # Cloudflare Pages deployment config for Vantage Circle SEO Suite
 # The _worker.js in this directory is deployed as the Pages Function.
-name = "orbit-v4o"
+name = "orbit"
 compatibility_date = "2026-08-20"
 
 account_id = "e53551f306846e7fdb6a80e806a7100a"

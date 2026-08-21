@@ -33,11 +33,11 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages project create orbit-v4o --production-branch=main
+          command: pages project create orbit --production-branch=main
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy seo-suite/public --project-name=orbit-v4o --branch=main --commit-dirty=true
+          command: pages deploy seo-suite/public --project-name=orbit --branch=main --commit-dirty=true
