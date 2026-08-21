@@ -3,8 +3,8 @@
 name = "orbit"
 compatibility_date = "2026-08-20"
 
-account_id = "e53551f306846e7fdb6a80e806a7100a"
+pages_build_output_dir = "."
 
 # Pages projects do not use the top-level 'main_entry_point' / 'workers' keys.
 # Run locally:  npx wrangler pages dev .
-# Deploy:       npx wrangler pages deploy . --project-name=orbit-v4o
+# Deploy:       CLOUDFLARE_ACCOUNT_ID=<id> npx wrangler pages deploy . --project-name=orbit-v4o
