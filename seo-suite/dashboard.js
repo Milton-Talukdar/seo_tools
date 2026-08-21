@@ -397,6 +397,19 @@
   }
 
   // ---------------------------------------------------------------- backlinks
+  function shortDomain(url) {
+    try {
+      const u = new URL(url);
+      return u.hostname.replace(/^www\./, '');
+    } catch (e) {
+      return url;
+    }
+  }
+
+  function renderBacklinkTab(label, id, html) {
+    return '<div class="bl-section' + (id === 'overview' ? ' active' : '') + '" id="bl-' + id + '">' + html + '</div>';
+  }
+
   async function loadBacklinks() {
     const el = document.getElementById('panel-backlinks');
     try {
@@ -404,43 +417,171 @@
       const snaps = data.snapshots || [];
       const events = data.events || [];
 
-      let html = '<h2>Backlinks</h2>';
       if (!snaps.length) {
-        html += '<div class="card">No backlink data available yet.</div>';
-        el.innerHTML = html;
+        el.innerHTML = '<h2>Backlinks</h2><div class="card">No backlink data available yet.</div>';
         return;
       }
 
+      // ---- Overview tab
       const mx = Math.max.apply(null, snaps.map(function (r) { return r.refdomains || 0; }).concat([1]));
       const snapRows = snaps.map(function (r) {
+        const label = (PROPERTIES[r.property] || { label: r.property || '—' }).label;
         return '<tr><td><b>' + esc(r.day) + '</b></td>' +
+          '<td>' + esc(label) + '</td>' +
           '<td class="vol">' + fmtNum(r.backlinks) + '</td>' +
           '<td class="vol">' + fmtNum(r.refdomains) + '</td>' +
           '<td><div class="bar"><div style="width:' + ((r.refdomains || 0) / mx * 100).toFixed(0) + '%"></div></div></td>' +
           '<td>' + esc(r.rank) + '</td></tr>';
       }).join('');
+      const overviewHtml = '<div class="card"><b>Profile totals</b><table>' +
+        '<tr><th>date</th><th>property</th><th>backlinks</th><th>refdomains</th><th></th><th>DFS rank</th></tr>' +
+        snapRows + '</table></div>' +
+        (events.length ? renderBacklinkEvents(events) : '');
 
-      html += '<div class="card"><b>Profile totals</b><table>' +
-        '<tr><th>date</th><th>backlinks</th><th>refdomains</th><th></th><th>DFS rank</th></tr>' +
-        snapRows + '</table></div>';
+      // ---- Top Backlinks tab
+      const detailsByProp = data.details || {};
+      const topHtml = renderDetailTabs(detailsByProp, 'backlink');
 
-      if (events.length) {
-        const eventRows = events.slice(0, 40).map(function (r) {
-          const chip = r.event === 'new' ? '<span class="chip you">new</span>' : '<span class="chip none">lost</span>';
-          if (r.domain === '(total)') {
-            return '<tr><td>' + esc(r.day) + '</td><td>' + chip + '</td><td class="sub">API aggregate count</td><td class="vol">' + esc(r.rank) + '</td></tr>';
-          }
-          return '<tr><td>' + esc(r.day) + '</td><td>' + chip + '</td><td>' + esc(r.domain) + '</td><td class="vol">' + (r.rank !== null && r.rank !== undefined ? esc(String(r.rank)) : '—') + '</td></tr>';
-        }).join('');
-        html += '<div class="card"><b>Recent new / lost referring domains</b><table>' +
-          '<tr><th>date</th><th>event</th><th>domain</th><th>rank</th></tr>' + eventRows + '</table>' +
-          '<p class="sub">Weekly API runs record aggregate counts; per-domain detail comes from the one-time Ahrefs import.</p></div>';
-      }
+      // ---- Referring Domains tab
+      const domainsByProp = data.domains || {};
+      const domainsHtml = renderDetailTabs(domainsByProp, 'domain');
 
-      el.innerHTML = html + stampHtml(data.snapshots && data.snapshots[0] && data.snapshots[0].day);
+      // ---- Anchor Text tab
+      const anchorsByProp = data.anchors || {};
+      const anchorsHtml = renderDetailTabs(anchorsByProp, 'anchor');
+
+      const tabs = [
+        { id: 'overview', label: 'Overview' },
+        { id: 'top', label: 'Top Backlinks' },
+        { id: 'domains', label: 'Referring Domains' },
+        { id: 'anchors', label: 'Anchor Text' },
+      ];
+      const tabHtml = '<div class="prop-tabs no-print">' + tabs.map(function (t, i) {
+        return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-bl="' + t.id + '">' + t.label + '</button>';
+      }).join('') + '</div>';
+
+      el.innerHTML = '<h2>Backlinks</h2>' + tabHtml +
+        renderBacklinkTab('Overview', 'overview', overviewHtml) +
+        renderBacklinkTab('Top Backlinks', 'top', topHtml) +
+        renderBacklinkTab('Referring Domains', 'domains', domainsHtml) +
+        renderBacklinkTab('Anchor Text', 'anchors', anchorsHtml) +
+        stampHtml(snaps[0].day);
+
+      initBacklinkTabs(el);
     } catch (e) {
       el.innerHTML = errorCard(e.message);
     }
+  }
+
+  function renderBacklinkEvents(events) {
+    const eventRows = events.slice(0, 40).map(function (r) {
+      const chip = r.event === 'new' ? '<span class="chip you">new</span>' : '<span class="chip none">lost</span>';
+      if (r.domain === '(total)') {
+        return '<tr><td>' + esc(r.day) + '</td><td>' + chip + '</td><td class="sub">API aggregate count</td><td class="vol">' + esc(r.rank) + '</td></tr>';
+      }
+      return '<tr><td>' + esc(r.day) + '</td><td>' + chip + '</td><td>' + esc(r.domain) + '</td><td class="vol">' + (r.rank !== null && r.rank !== undefined ? esc(String(r.rank)) : '—') + '</td></tr>';
+    }).join('');
+    return '<div class="card"><b>Recent new / lost referring domains</b><table>' +
+      '<tr><th>date</th><th>event</th><th>domain</th><th>rank</th></tr>' + eventRows + '</table>' +
+      '<p class="sub">New/lost counts come from DataForSEO bulk endpoint. Per-domain detail is shown when the API provides it.</p></div>';
+  }
+
+  function renderDetailTabs(byProp, kind) {
+    const props = Object.keys(byProp);
+    if (!props.length) {
+      return '<div class="card">No detailed data available yet. Run <code>python3 backlinks.py</code> to populate.</div>';
+    }
+    const hasBoth = props.length > 1;
+    const tabBtns = hasBoth ? '<div class="prop-tabs sub-tabs no-print">' + props.map(function (p, i) {
+      return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-blprop="' + esc(p) + '">' + esc((PROPERTIES[p] || { label: p }).label) + '</button>';
+    }).join('') + '</div>' : '';
+
+    const panels = props.map(function (p, i) {
+      const rows = (byProp[p].rows || []);
+      const day = byProp[p].day || '';
+      let table = '';
+      if (kind === 'backlink') {
+        table = '<table class="backlink-detail-table">' +
+          '<thead><tr><th>Source page</th><th>Target page</th><th>Anchor</th><th>Type</th><th>Rank</th></tr></thead><tbody>' +
+          rows.slice(0, 1000).map(function (r) {
+            const anchor = r.anchor || '<span class="sub">[empty]</span>';
+            return '<tr data-search="' + esc((r.source_url + ' ' + r.target_url + ' ' + (r.anchor || '') + ' ' + r.domain).toLowerCase()) + '">' +
+              '<td><a href="' + esc(r.source_url) + '" target="_blank" rel="noopener" class="sub">' + esc(shortDomain(r.source_url)) + '</a></td>' +
+              '<td><a href="' + esc(r.target_url) + '" target="_blank" rel="noopener" class="sub">' + esc(shortDomain(r.target_url)) + '</a></td>' +
+              '<td>' + anchor + '</td>' +
+              '<td>' + (r.dofollow ? '<span class="chip you">dofollow</span>' : '<span class="chip none">nofollow</span>') + '</td>' +
+              '<td class="num">' + esc(String(r.rank || '—')) + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      } else if (kind === 'domain') {
+        table = '<table class="backlink-detail-table">' +
+          '<thead><tr><th>Domain</th><th>Backlinks</th><th>Ref IPs</th><th>Rank</th></tr></thead><tbody>' +
+          rows.slice(0, 1000).map(function (r) {
+            return '<tr data-search="' + esc(String(r.domain || '').toLowerCase()) + '">' +
+              '<td>' + esc(r.domain || '—') + '</td>' +
+              '<td class="num">' + fmtNum(r.backlinks || 0) + '</td>' +
+              '<td class="num">' + fmtNum(r.ref_ips || 0) + '</td>' +
+              '<td class="num">' + esc(String(r.rank || '—')) + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      } else if (kind === 'anchor') {
+        table = '<table class="backlink-detail-table">' +
+          '<thead><tr><th>Anchor text</th><th>Backlinks</th><th>Dofollow</th><th>% Dofollow</th></tr></thead><tbody>' +
+          rows.slice(0, 100).map(function (r) {
+            const pct = r.backlinks ? Math.round((r.dofollow_backlinks || 0) / r.backlinks * 100) : 0;
+            return '<tr data-search="' + esc(String(r.anchor || '').toLowerCase()) + '">' +
+              '<td>' + esc(r.anchor || '—') + '</td>' +
+              '<td class="num">' + fmtNum(r.backlinks || 0) + '</td>' +
+              '<td class="num">' + fmtNum(r.dofollow_backlinks || 0) + '</td>' +
+              '<td><div class="bar"><div style="width:' + pct + '%"></div></div> ' + pct + '%</td></tr>';
+          }).join('') + '</tbody></table>';
+      }
+      const searchBox = kind === 'backlink' ? '<input type="search" class="bl-search" placeholder="Filter ' + rows.length + ' backlinks…" data-blsearch="' + esc(p) + '">' : '';
+      return '<div class="bl-prop' + (i === 0 ? ' active' : '') + '" id="blprop-' + esc(p) + '-' + kind + '">' +
+        '<div class="card">' + searchBox + table +
+        '<p class="sub">Latest snapshot ' + esc(day) + ' · ' + rows.length + ' rows from DataForSEO.</p></div></div>';
+    }).join('');
+
+    return tabBtns + panels;
+  }
+
+  function initBacklinkTabs(panelEl) {
+    const tabs = panelEl.querySelectorAll('.prop-tab[data-bl]');
+    const sections = panelEl.querySelectorAll('.bl-section');
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        const id = tab.getAttribute('data-bl');
+        tabs.forEach(function (t) { t.classList.toggle('active', t === tab); });
+        sections.forEach(function (s) { s.classList.toggle('active', s.id === 'bl-' + id); });
+      });
+    });
+
+    // Sub-tabs inside Top/Domain/Anchor tabs
+    const subTabs = panelEl.querySelectorAll('.prop-tab[data-blprop]');
+    const subProps = panelEl.querySelectorAll('.bl-prop');
+    subTabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        const prop = tab.getAttribute('data-blprop');
+        const parent = tab.closest('.bl-section');
+        if (!parent) return;
+        parent.querySelectorAll('.prop-tab[data-blprop]').forEach(function (t) {
+          t.classList.toggle('active', t === tab);
+        });
+        parent.querySelectorAll('.bl-prop').forEach(function (p) {
+          p.classList.toggle('active', p.id.startsWith('blprop-' + prop + '-'));
+        });
+      });
+    });
+
+    // Search inside top-backlinks tables
+    panelEl.querySelectorAll('.bl-search').forEach(function (input) {
+      input.addEventListener('input', function () {
+        const q = input.value.toLowerCase();
+        const prop = input.getAttribute('data-blsearch');
+        const section = input.closest('.bl-section');
+        section.querySelectorAll('tbody tr').forEach(function (tr) {
+          tr.style.display = (tr.getAttribute('data-search') || '').includes(q) ? '' : 'none';
+        });
+      });
+    });
   }
 
   // ---------------------------------------------------------------- LLM visibility

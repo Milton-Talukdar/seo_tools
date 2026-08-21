@@ -177,9 +177,8 @@ async function rankSummary(env) {
 }
 
 async function handleSummary(env) {
-  const [rankBlock, backlinkRows, llmDayRow, freshDayRow, compSnaps] = await Promise.all([
+  const [rankBlock, llmDayRow, freshDayRow, compSnaps] = await Promise.all([
     rankSummary(env),
-    sbFetch(env, "/backlink_snapshots?select=*&order=day.desc&limit=2"),
     sbFetch(env, "/llm_snapshots?select=day&property=eq.vantagecircle&order=day.desc&limit=1"),
     sbFetch(env, "/freshness_scores?select=day&order=day.desc&limit=1"),
     sbFetch(
@@ -187,6 +186,33 @@ async function handleSummary(env) {
       "/competitor_snapshots?select=property,competitor,total_urls&order=day.desc&limit=200"
     ),
   ]);
+
+  // Latest + previous referring-domain totals across both properties
+  const backlinkByProp = await Promise.all(
+    Object.keys(PROPERTIES).map(async (prop) => {
+      const rows = await sbFetch(
+        env,
+        `/backlink_snapshots?select=*&property=eq.${encodeURIComponent(prop)}&order=day.desc&limit=2`
+      );
+      return { prop, latest: rows[0] || null, previous: rows[1] || null };
+    })
+  );
+  let latestRefdomains = 0, previousRefdomains = 0;
+  let latestBlDay = "", previousBlDay = "";
+  for (const { latest, previous } of backlinkByProp) {
+    if (latest) {
+      latestRefdomains += latest.refdomains || 0;
+      if (latest.day > latestBlDay) latestBlDay = latest.day;
+    }
+    if (previous) {
+      previousRefdomains += previous.refdomains || 0;
+      if (previous.day > previousBlDay) previousBlDay = previous.day;
+    }
+  }
+  const backlinkSummary = {
+    latest: { refdomains: latestRefdomains, day: latestBlDay },
+    previous: previousBlDay ? { refdomains: previousRefdomains, day: previousBlDay } : null,
+  };
 
   const [llm, freshness] = await Promise.all([
     (async () => {
@@ -221,7 +247,7 @@ async function handleSummary(env) {
 
   return {
     rank: rankBlock.summary,
-    backlinks: { latest: backlinkRows[0] || null, previous: backlinkRows[1] || null },
+    backlinks: backlinkSummary,
     llm,
     freshness,
     competitors,
@@ -341,7 +367,35 @@ async function handleBacklinks(env) {
     sbFetch(env, "/backlink_snapshots?select=*&order=day.desc&limit=8"),
     sbFetch(env, "/refdomain_events?select=*&order=day.desc&limit=40"),
   ]);
-  return { snapshots, events };
+
+  // Latest expanded snapshot day per property
+  const dayRows = await sbFetch(
+    env,
+    "/backlink_details?select=day,property&order=day.desc&limit=100"
+  );
+  const latestByProp = {};
+  for (const r of dayRows) {
+    if (!latestByProp[r.property]) latestByProp[r.property] = r.day;
+  }
+
+  const details = {};
+  const domains = {};
+  const anchors = {};
+  await Promise.all(
+    Object.entries(latestByProp).map(async ([prop, day]) => {
+      const p = `&property=eq.${encodeURIComponent(prop)}`;
+      const [d, dom, a] = await Promise.all([
+        sbFetchAll(env, `/backlink_details?select=*&day=eq.${day}${p}&order=rank.desc,source_url`),
+        sbFetchAll(env, `/referring_domains?select=*&day=eq.${day}${p}&order=rank.desc,domain`),
+        sbFetchAll(env, `/anchor_distribution?select=*&day=eq.${day}${p}&order=backlinks.desc,anchor`),
+      ]);
+      details[prop] = { day, rows: d };
+      domains[prop] = { day, rows: dom };
+      anchors[prop] = { day, rows: a };
+    })
+  );
+
+  return { snapshots, events, details, domains, anchors };
 }
 
 // ------------------------------------------------------------------- /api/llm

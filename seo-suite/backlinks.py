@@ -1,37 +1,38 @@
 #!/usr/bin/env python3
 """
-backlinks.py — weekly backlink profile snapshot for vantagecircle.com.
+backlinks.py — monthly expanded backlink snapshot for Vantage Circle + Vantage Fit.
 
-1. /backlinks/summary/live -> totals (backlinks, refdomains, DFS rank)
-2. /backlinks/bulk_new_lost_referring_domains/live -> new/lost refdomain
-   counts over the trailing ~30 days.
+Pulls from DataForSEO:
+  - /backlinks/summary/live          -> totals + DFS rank
+  - /backlinks/bulk_new_lost_referring_domains/live -> new/lost refdomain counts
+  - /backlinks/backlinks/live        -> top 1,000 individual backlinks
+  - /backlinks/referring_domains/live-> top 1,000 referring domains
+  - /backlinks/anchors/live          -> top 100 anchor texts
 
-Snapshots go into seo_suite.db so the dashboard can trend the link profile.
-Honest note: the DataForSEO link index is smaller than Ahrefs' — this covers
-trend monitoring; deep forensic exports may still warrant Ahrefs (per-domain
-new/lost detail comes from the one-time import_ahrefs.py backfill).
+Stores to SQLite (seo_suite.db) and Supabase.
 
 Usage:
-    python3 backlinks.py            # run both calls, save + report
-    python3 backlinks.py --dry-run  # show what would run; no API calls, no cost
-    python3 backlinks.py --report   # no API calls; net change + notable losses
+    python3 backlinks.py            # run all properties
+    python3 backlinks.py --property vantagecircle --dry-run
+    python3 backlinks.py --report
 """
 import argparse
 from datetime import date
 
-from common import DB_PATH, dfs_post, init_db, load_env, supabase_upsert
+from common import DB_PATH, LLM_PROPERTIES, dfs_post, init_db, load_env, supabase_upsert
 
-# ---- edit these ------------------------------------------------------------
-TARGET = "vantagecircle.com"
-AGGREGATE = "(total)"      # domain sentinel for count-only rows from the API
-DELAY_SECONDS = 1
-EST_COST = 0.02            # summary + bulk call, give or take
-# -----------------------------------------------------------------------------
+# Maximum rows to pull per endpoint per property.
+LIMITS = {
+    "backlinks": 1000,
+    "referring_domains": 1000,
+    "anchors": 100,
+}
+
+AGGREGATE = "(total)"
 
 
 def pick(obj, *names):
-    """First numeric value for any of `names` found anywhere in a nested
-    result (schema-tolerant, like llm_track.py's extract())."""
+    """First numeric value for any of `names` found anywhere in a nested result."""
     if isinstance(obj, dict):
         for n in names:
             if isinstance(obj.get(n), (int, float)):
@@ -48,28 +49,39 @@ def pick(obj, *names):
     return None
 
 
-def snapshot_summary(con, today):
-    result = dfs_post("/backlinks/summary/live", [{"target": TARGET}])
-    backlinks = pick(result, "backlinks") or 0
-    refdomains = pick(result, "referring_domains", "referring_main_domains") or 0
-    rank = pick(result, "rank") or 0
-    con.execute("INSERT OR REPLACE INTO backlink_snapshots VALUES (?,?,?,?)",
-                (today, int(backlinks), int(refdomains), int(rank)))
-    return {
-        "day": today,
-        "backlinks": int(backlinks),
-        "refdomains": int(refdomains),
-        "rank": int(rank),
-    }
+def dfs_items(result):
+    """Yield items from a DataForSEO result that may be wrapped in task metadata."""
+    if isinstance(result, list):
+        for block in result:
+            if isinstance(block, dict):
+                if "items" in block and isinstance(block["items"], list):
+                    for item in block["items"]:
+                        yield item
+                else:
+                    yield block
+    elif isinstance(result, dict):
+        if "items" in result and isinstance(result["items"], list):
+            for item in result["items"]:
+                yield item
+        else:
+            yield result
 
 
-def snapshot_new_lost(con, today):
-    """New/lost refdomain counts. The bulk endpoint returns counts per target
-    rather than domain lists, so aggregate rows use domain='(total)' with the
-    count stored in the rank column; if a response variant ever includes
-    per-domain items, those are stored row by row instead."""
+def fetch_summary(target):
+    result = dfs_post("/backlinks/summary/live", [{"target": target}])
+    for item in dfs_items(result):
+        return {
+            "backlinks": int(pick(item, "backlinks") or 0),
+            "refdomains": int(pick(item, "referring_domains", "referring_main_domains") or 0),
+            "rank": int(pick(item, "rank") or 0),
+        }
+    return {"backlinks": 0, "refdomains": 0, "rank": 0}
+
+
+def fetch_new_lost(target):
+    """Return ({new, lost}, [event_rows]) for the trailing ~30 days."""
     result = dfs_post("/backlinks/bulk_new_lost_referring_domains/live",
-                      [{"targets": [TARGET]}])
+                      [{"targets": [target]}])
     counts, domains = {}, []
 
     def walk(node):
@@ -91,18 +103,146 @@ def snapshot_new_lost(con, today):
     walk(result)
     rows = []
     for event, domain, rank in domains:
-        con.execute("INSERT OR REPLACE INTO refdomain_events VALUES (?,?,?,?)",
-                    (today, event, domain, rank))
-        rows.append({"day": today, "event": event, "domain": domain, "rank": rank})
+        rows.append({"event": event, "domain": domain, "rank": rank})
     for event in ("new", "lost"):
         if event in counts:
-            con.execute("INSERT OR REPLACE INTO refdomain_events VALUES (?,?,?,?)",
-                        (today, event, AGGREGATE, counts[event]))
-            rows.append({"day": today, "event": event, "domain": AGGREGATE, "rank": counts[event]})
+            rows.append({"event": event, "domain": AGGREGATE, "rank": counts[event]})
     return counts, rows
 
 
-def report(con):
+def fetch_backlinks(target, limit=LIMITS["backlinks"]):
+    """Return top N individual backlinks."""
+    result = dfs_post("/backlinks/backlinks/live", [{"target": target, "limit": limit}])
+    rows = []
+    for item in dfs_items(result):
+        if item.get("type") != "backlink":
+            continue
+        anchor = item.get("anchor") or ""
+        if item.get("item_type") == "image":
+            anchor = item.get("alt") or "[image]"
+        rows.append({
+            "source_url": item.get("url_from", ""),
+            "target_url": item.get("url_to", ""),
+            "domain": item.get("domain_from", ""),
+            "anchor": anchor,
+            "dofollow": bool(item.get("dofollow", True)),
+            "first_seen": item.get("first_seen", "")[:10] or None,
+            "rank": int(item.get("rank") or 0),
+        })
+    return rows
+
+
+def fetch_referring_domains(target, limit=LIMITS["referring_domains"]):
+    """Return top N referring domains."""
+    result = dfs_post("/backlinks/referring_domains/live",
+                      [{"target": target, "limit": limit, "mode": "subdomains"}])
+    rows = []
+    for item in dfs_items(result):
+        if item.get("type") != "backlinks_referring_domain":
+            continue
+        rows.append({
+            "domain": item.get("domain", ""),
+            "backlinks": int(pick(item, "backlinks") or 0),
+            "ref_ips": int(pick(item, "referring_ips") or 0),
+            "rank": int(pick(item, "rank") or 0),
+        })
+    return rows
+
+
+def fetch_anchors(target, limit=LIMITS["anchors"]):
+    """Return top N anchor texts."""
+    result = dfs_post("/backlinks/anchors/live", [{"target": target, "limit": limit}])
+    rows = []
+    for item in dfs_items(result):
+        if item.get("type") != "backlinks_anchor":
+            continue
+        total = int(pick(item, "backlinks") or 0)
+        nofollow = int(pick(item, "referring_domains_nofollow") or 0)
+        rows.append({
+            "anchor": item.get("anchor") or "[empty / image]",
+            "backlinks": total,
+            "dofollow_backlinks": max(0, total - nofollow),
+        })
+    return rows
+
+
+def run(property_key, today, dry_run=False):
+    cfg = LLM_PROPERTIES.get(property_key)
+    if not cfg:
+        print(f"[{property_key}] Unknown property; skipping.")
+        return
+    target = cfg["domain"]
+    print(f"\n[{property_key}] Fetching backlink data for {target}")
+
+    summary = fetch_summary(target)
+    print(f"  summary: {summary['backlinks']:,} backlinks, "
+          f"{summary['refdomains']:,} refdomains, rank {summary['rank']}")
+
+    counts, event_domains = fetch_new_lost(target)
+    print(f"  new/lost (30d): +{counts.get('new', 0)} / -{counts.get('lost', 0)}")
+
+    backlinks = fetch_backlinks(target)
+    print(f"  top backlinks: {len(backlinks)}")
+
+    domains = fetch_referring_domains(target)
+    print(f"  referring domains: {len(domains)}")
+
+    anchors = fetch_anchors(target)
+    print(f"  anchor texts: {len(anchors)}")
+
+    if dry_run:
+        return
+
+    # SQLite
+    con = init_db()
+    con.execute(
+        "INSERT OR REPLACE INTO backlink_snapshots(day, property, backlinks, refdomains, rank) VALUES (?,?,?,?,?)",
+        (today, property_key, summary["backlinks"], summary["refdomains"], summary["rank"]))
+    for ev in event_domains:
+        con.execute(
+            "INSERT OR REPLACE INTO refdomain_events(day, property, event, domain, rank) VALUES (?,?,?,?,?)",
+            (today, property_key, ev["event"], ev["domain"], ev["rank"]))
+    for b in backlinks:
+        con.execute(
+            "INSERT OR REPLACE INTO backlink_details VALUES (?,?,?,?,?,?,?,?,?)",
+            (today, property_key, b["source_url"], b["target_url"], b["domain"],
+             b["anchor"], b["dofollow"], b["first_seen"], b["rank"]))
+    for d in domains:
+        con.execute(
+            "INSERT OR REPLACE INTO referring_domains VALUES (?,?,?,?,?,?)",
+            (today, property_key, d["domain"], d["backlinks"], d["ref_ips"], d["rank"]))
+    for a in anchors:
+        con.execute(
+            "INSERT OR REPLACE INTO anchor_distribution VALUES (?,?,?,?,?)",
+            (today, property_key, a["anchor"], a["backlinks"], a["dofollow_backlinks"]))
+    con.commit()
+    print(f"  saved to {DB_PATH.name}")
+
+    # Supabase
+    supabase_upsert("backlink_snapshots", [{
+        "day": today,
+        "property": property_key,
+        "backlinks": summary["backlinks"],
+        "refdomains": summary["refdomains"],
+        "rank": summary["rank"],
+    }])
+    supabase_upsert("refdomain_events", [
+        {"day": today, "property": property_key, "event": ev["event"], "domain": ev["domain"], "rank": ev["rank"]}
+        for ev in event_domains
+    ])
+    supabase_upsert("backlink_details", [
+        {"day": today, "property": property_key, **b} for b in backlinks
+    ])
+    supabase_upsert("referring_domains", [
+        {"day": today, "property": property_key, **d} for d in domains
+    ])
+    supabase_upsert("anchor_distribution", [
+        {"day": today, "property": property_key, **a} for a in anchors
+    ])
+
+
+def report():
+    con = init_db()
     days = [r[0] for r in con.execute(
         "SELECT DISTINCT day FROM backlink_snapshots ORDER BY day DESC LIMIT 2")]
     if not days:
@@ -120,56 +260,26 @@ def report(con):
         print(f"  net change vs {days[1]}: "
               f"{latest[0] - prev[0]:+,} backlinks, "
               f"{latest[1] - prev[1]:+,} refdomains")
-    try:
-        events = con.execute(
-            "SELECT event, domain, rank FROM refdomain_events WHERE day=? "
-            "ORDER BY event, rank DESC", (days[0],)).fetchall()
-    except Exception:
-        events = []
-    for event in ("new", "lost"):
-        rows = [(d, r) for e, d, r in events if e == event]
-        agg_rows = [r for d, r in rows if d == AGGREGATE]
-        if agg_rows:
-            print(f"  {event} refdomains (30-day window): {agg_rows[0]}")
-        named = [(d, r) for d, r in rows if d != AGGREGATE]
-        if named:
-            label = "notable new" if event == "new" else "notable lost"
-            print(f"  {label} domains:")
-            for d, r in named[:10]:
-                print(f"    {d[:50]:50s} rank {r if r is not None else '—'}")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--report", action="store_true")
+    ap.add_argument("--property", choices=list(LLM_PROPERTIES.keys()),
+                    help="Run one property")
+    ap.add_argument("--dry-run", action="store_true", help="Preview, no writes")
+    ap.add_argument("--report", action="store_true", help="Local report only")
     args = ap.parse_args()
 
-    con = init_db()
     if args.report:
-        report(con)
-        return
-
-    print(f"2 API calls for {TARGET}  (~${EST_COST:.2f})")
-    print("  - /backlinks/summary/live (totals)")
-    print("  - /backlinks/bulk_new_lost_referring_domains/live (new/lost counts)")
-    if args.dry_run:
+        report()
         return
 
     load_env()
     today = date.today().isoformat()
-    summary_row = snapshot_summary(con, today)
-    print(f"totals: {summary_row['backlinks']:,} backlinks, "
-          f"{summary_row['refdomains']:,} refdomains, rank {summary_row['rank']}")
-    counts, event_rows = snapshot_new_lost(con, today)
-    print(f"new/lost refdomains (30-day window): "
-          f"+{counts.get('new', 0)} / -{counts.get('lost', 0)}")
-    con.commit()
-    print(f"\nSaved snapshot to {DB_PATH.name}")
-    supabase_upsert("backlink_snapshots", [summary_row])
-    supabase_upsert("refdomain_events", event_rows)
-    report(con)
+    props = [args.property] if args.property else list(LLM_PROPERTIES.keys())
+    for key in props:
+        run(key, today, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

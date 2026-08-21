@@ -140,12 +140,26 @@ def init_db():
         traffic_prev REAL, traffic_cur REAL,
         PRIMARY KEY(property, keyword));
     CREATE TABLE IF NOT EXISTS backlink_snapshots(
-        day TEXT, backlinks INTEGER, refdomains INTEGER, rank INTEGER,
-        PRIMARY KEY(day));
+        day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle',
+        backlinks INTEGER, refdomains INTEGER, rank INTEGER,
+        PRIMARY KEY(day, property));
     CREATE TABLE IF NOT EXISTS refdomain_events(
-        day TEXT, event TEXT CHECK(event IN ('new', 'lost')), domain TEXT,
+        day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle',
+        event TEXT CHECK(event IN ('new', 'lost')), domain TEXT,
         rank INTEGER,
-        PRIMARY KEY(day, event, domain));
+        PRIMARY KEY(day, property, event, domain));
+    CREATE TABLE IF NOT EXISTS backlink_details(
+        day TEXT, property TEXT, source_url TEXT, target_url TEXT,
+        domain TEXT, anchor TEXT, dofollow INTEGER, first_seen TEXT, rank INTEGER,
+        PRIMARY KEY(day, property, source_url, target_url));
+    CREATE TABLE IF NOT EXISTS referring_domains(
+        day TEXT, property TEXT, domain TEXT, backlinks INTEGER,
+        ref_ips INTEGER, rank INTEGER,
+        PRIMARY KEY(day, property, domain));
+    CREATE TABLE IF NOT EXISTS anchor_distribution(
+        day TEXT, property TEXT, anchor TEXT, backlinks INTEGER,
+        dofollow_backlinks INTEGER,
+        PRIMARY KEY(day, property, anchor));
     CREATE TABLE IF NOT EXISTS llm_snapshots(
         day TEXT, platform TEXT, prompt TEXT, mentions TEXT,
         cited_mine INTEGER, links TEXT, answer TEXT,
@@ -226,6 +240,67 @@ def init_db():
         con.execute("ALTER TABLE discovered ADD COLUMN prev_volume INTEGER")
     if cols and "volume_delta" not in cols:
         con.execute("ALTER TABLE discovered ADD COLUMN volume_delta INTEGER")
+
+    # v7 migration: backlink_snapshots becomes per-property with composite PK
+    cols = [r[1] for r in con.execute("PRAGMA table_info(backlink_snapshots)")]
+    if cols:
+        has_prop = "property" in cols
+        pk_cols = [r[1] for r in con.execute("PRAGMA table_info(backlink_snapshots)") if r[5]]
+        if not has_prop or pk_cols != ["day", "property"]:
+            con.execute("""
+                CREATE TABLE backlink_snapshots_new (
+                    day TEXT,
+                    property TEXT NOT NULL DEFAULT 'vantagecircle',
+                    backlinks INTEGER,
+                    refdomains INTEGER,
+                    rank INTEGER,
+                    PRIMARY KEY(day, property)
+                )
+            """)
+            if has_prop:
+                con.execute("""
+                    INSERT INTO backlink_snapshots_new(day, property, backlinks, refdomains, rank)
+                    SELECT day, property, backlinks, refdomains, rank FROM backlink_snapshots
+                """)
+            else:
+                con.execute("""
+                    INSERT INTO backlink_snapshots_new(day, property, backlinks, refdomains, rank)
+                    SELECT day, 'vantagecircle', backlinks, refdomains, rank FROM backlink_snapshots
+                """)
+            con.execute("DROP TABLE backlink_snapshots")
+            con.execute("ALTER TABLE backlink_snapshots_new RENAME TO backlink_snapshots")
+            print("[db] migrated backlink_snapshots to per-property (day, property) PK")
+
+    # v7 migration: refdomain_events also becomes per-property
+    cols = [r[1] for r in con.execute("PRAGMA table_info(refdomain_events)")]
+    if cols:
+        has_prop = "property" in cols
+        pk_cols = [r[1] for r in con.execute("PRAGMA table_info(refdomain_events)") if r[5]]
+        if not has_prop or pk_cols != ["day", "property", "event", "domain"]:
+            con.execute("""
+                CREATE TABLE refdomain_events_new (
+                    day TEXT,
+                    property TEXT NOT NULL DEFAULT 'vantagecircle',
+                    event TEXT CHECK(event IN ('new', 'lost')),
+                    domain TEXT,
+                    rank INTEGER,
+                    PRIMARY KEY(day, property, event, domain)
+                )
+            """)
+            if has_prop:
+                con.execute("""
+                    INSERT INTO refdomain_events_new(day, property, event, domain, rank)
+                    SELECT day, property, event, domain, rank FROM refdomain_events
+                """)
+            else:
+                con.execute("""
+                    INSERT INTO refdomain_events_new(day, property, event, domain, rank)
+                    SELECT day, 'vantagecircle', event, domain, rank FROM refdomain_events
+                """)
+            con.execute("DROP TABLE refdomain_events")
+            con.execute("ALTER TABLE refdomain_events_new RENAME TO refdomain_events")
+            print("[db] migrated refdomain_events to per-property (day, property, event, domain) PK")
+
     return con
 
 
