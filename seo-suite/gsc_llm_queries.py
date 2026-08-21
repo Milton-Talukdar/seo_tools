@@ -75,8 +75,8 @@ def gsc_service_account_credentials():
         return None
 
 
-def fetch_gsc_queries(credentials, site_url, start_date, end_date):
-    """Yield (query, clicks, impressions, ctr, position) rows from GSC."""
+def fetch_gsc_query_pages(credentials, site_url, start_date, end_date):
+    """Yield (query, page, clicks, impressions, ctr, position) rows from GSC."""
     try:
         from googleapiclient.discovery import build
     except ImportError:
@@ -91,7 +91,7 @@ def fetch_gsc_queries(credentials, site_url, start_date, end_date):
         req = {
             "startDate": start_date,
             "endDate": end_date,
-            "dimensions": ["query"],
+            "dimensions": ["query", "page"],
             "rowLimit": row_limit,
             "startRow": start_row,
         }
@@ -102,9 +102,11 @@ def fetch_gsc_queries(credentials, site_url, start_date, end_date):
 
         for row in rows:
             keys = row.get("keys", [])
-            query = keys[0] if keys else ""
+            query = keys[0] if len(keys) > 0 else ""
+            page = keys[1] if len(keys) > 1 else ""
             yield {
                 "query": query,
+                "page": page,
                 "clicks": int(row.get("clicks", 0)),
                 "impressions": int(row.get("impressions", 0)),
                 "ctr": float(row.get("ctr", 0.0)),
@@ -114,6 +116,48 @@ def fetch_gsc_queries(credentials, site_url, start_date, end_date):
         if len(rows) < row_limit:
             break
         start_row += row_limit
+
+
+def aggregate_by_query(rows):
+    """Aggregate query-page rows by query, picking the top page by clicks."""
+    by_query = {}
+    for r in rows:
+        q = r["query"]
+        if q not in by_query:
+            by_query[q] = {
+                "query": q,
+                "clicks": 0,
+                "impressions": 0,
+                "page": "",
+                "page_clicks": 0,
+                "position_sum": 0.0,
+                "position_weight": 0,
+            }
+        agg = by_query[q]
+        agg["clicks"] += r["clicks"]
+        agg["impressions"] += r["impressions"]
+        # Weighted position by impressions
+        if r["impressions"] > 0:
+            agg["position_sum"] += r["position"] * r["impressions"]
+            agg["position_weight"] += r["impressions"]
+        # Track top page by clicks
+        if r["page"] and r["clicks"] > agg["page_clicks"]:
+            agg["page"] = r["page"]
+            agg["page_clicks"] = r["clicks"]
+
+    out = []
+    for q, agg in by_query.items():
+        ctr = agg["clicks"] / agg["impressions"] if agg["impressions"] > 0 else 0.0
+        position = agg["position_sum"] / agg["position_weight"] if agg["position_weight"] > 0 else 0.0
+        out.append({
+            "query": q,
+            "page": agg["page"],
+            "clicks": agg["clicks"],
+            "impressions": agg["impressions"],
+            "ctr": ctr,
+            "position": position,
+        })
+    return out
 
 
 def is_junk_query(query):
@@ -171,14 +215,18 @@ def run(property_key, days=28, dry_run=False):
         print("GSC_SERVICE_ACCOUNT_JSON not configured; nothing to do.")
         return
 
+    raw_rows = list(fetch_gsc_query_pages(creds, site_url, start_str, end_str))
+    aggregated = aggregate_by_query(raw_rows)
+
     rows = []
-    for r in fetch_gsc_queries(creds, site_url, start_str, end_str):
+    for r in aggregated:
         score, signals = score_query(r["query"])
         if score >= MIN_SCORE:
             rows.append({
                 "property": property_key,
                 "day": day_str,
                 "query": r["query"],
+                "page": r["page"],
                 "clicks": r["clicks"],
                 "impressions": r["impressions"],
                 "ctr": round(r["ctr"], 4),
@@ -192,7 +240,7 @@ def run(property_key, days=28, dry_run=False):
 
     if dry_run:
         for r in rows[:10]:
-            print(f"  score={r['llm_score']} clicks={r['clicks']} pos={r['position']} q={r['query']}")
+            print(f"  score={r['llm_score']} clicks={r['clicks']} pos={r['position']} page={r['page']} q={r['query']}")
         return
 
     supabase_upsert("gsc_llm_queries", rows)

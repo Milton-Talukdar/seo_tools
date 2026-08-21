@@ -1001,7 +1001,7 @@ async function handleGscLlmQueries(env, url) {
 
   const rows = await sbFetchAll(
     env,
-    `/gsc_llm_queries?select=query,clicks,impressions,ctr,position,llm_score,llm_signals&day=eq.${day}&property=eq.${encodeURIComponent(property)}&order=llm_score.desc,clicks.desc`
+    `/gsc_llm_queries?select=query,page,clicks,impressions,ctr,position,llm_score,llm_signals&day=eq.${day}&property=eq.${encodeURIComponent(property)}&order=llm_score.desc,clicks.desc`
   );
 
   let totalClicks = 0;

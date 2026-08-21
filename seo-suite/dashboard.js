@@ -1547,8 +1547,12 @@
           const signals = (q.signals || []).map(function (s) {
             return '<span class="chip">' + esc(s.replace(/_/g, ' ')) + '</span>';
           }).join(' ');
+          const pageCell = q.page
+            ? '<a href="' + esc(q.page) + '" target="_blank" rel="noopener" class="sub" title="' + esc(q.page) + '">' + esc(q.page.replace(/^https?:\/\//, '').replace(/\/$/, '')) + '</a>'
+            : '<span class="sub">—</span>';
           return '<tr>' +
             '<td>' + esc(q.query) + '</td>' +
+            '<td class="sub">' + pageCell + '</td>' +
             '<td class="num">' + esc(String(q.llm_score || 0)) + '</td>' +
             '<td>' + (signals || '<span class="sub">—</span>') + '</td>' +
             '<td class="num">' + fmtNum(q.clicks || 0) + '</td>' +
@@ -1563,8 +1567,8 @@
           '</div>';
         const body = '<div class="card">' + summary +
           '<table class="gsc-llm-table">' +
-          '<thead><tr><th>Query</th><th>Score</th><th>Signals</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead>' +
-          '<tbody>' + (rows || '<tr><td colspan="7" class="sub">No queries yet.</td></tr>') + '</tbody></table>' +
+          '<thead><tr><th>Query</th><th>Page</th><th>Score</th><th>Signals</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead>' +
+          '<tbody>' + (rows || '<tr><td colspan="8" class="sub">No queries yet.</td></tr>') + '</tbody></table>' +
           '<p class="sub">Queries from Google Search Console that match LLM-style patterns (questions, comparisons, long-tail). Latest run ' + esc(t.data.day || '—') + '.</p></div>';
         return '<div class="gsc-llm-prop' + (i === 0 ? ' active' : '') + '" id="gsc-llm-' + esc(t.key) + '">' + body + '</div>';
       }).join('');
