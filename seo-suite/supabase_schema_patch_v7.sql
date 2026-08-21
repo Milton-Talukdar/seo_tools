@@ -69,5 +69,24 @@ BEGIN
 END $$;
 CREATE INDEX IF NOT EXISTS idx_refdomain_events_property ON refdomain_events(property, day DESC);
 
+-- Top linked pages + broken pages (DataForSEO domain_pages_summary)
+CREATE TABLE IF NOT EXISTS backlink_pages (
+  day DATE NOT NULL,
+  property TEXT NOT NULL,
+  url TEXT NOT NULL,
+  rank INTEGER,
+  backlinks INTEGER DEFAULT 0,
+  refdomains INTEGER DEFAULT 0,
+  dofollow_backlinks INTEGER DEFAULT 0,
+  nofollow_backlinks INTEGER DEFAULT 0,
+  broken_backlinks INTEGER DEFAULT 0,
+  broken_pages INTEGER DEFAULT 0,
+  first_seen DATE,
+  PRIMARY KEY (day, property, url)
+);
+CREATE INDEX IF NOT EXISTS idx_backlink_pages_day ON backlink_pages(day DESC, property);
+CREATE INDEX IF NOT EXISTS idx_backlink_pages_backlinks ON backlink_pages(day, property, backlinks DESC);
+CREATE INDEX IF NOT EXISTS idx_backlink_pages_broken ON backlink_pages(day, property, broken_backlinks DESC);
+
 -- Force PostgREST to pick up the new columns immediately.
 NOTIFY pgrst, 'reload schema';

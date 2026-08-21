@@ -166,6 +166,41 @@ def fetch_anchors(target, limit=LIMITS["anchors"]):
     return rows
 
 
+def parse_page_summary(item):
+    """Normalize a DataForSEO backlinks_page_summary item."""
+    total = int(pick(item, "backlinks") or 0)
+    attrs = item.get("referring_links_attributes") or {}
+    nofollow = int(attrs.get("nofollow") or 0)
+    first_seen = item.get("first_seen") or ""
+    return {
+        "url": item.get("url", ""),
+        "rank": int(pick(item, "rank") or 0),
+        "backlinks": total,
+        "refdomains": int(pick(item, "referring_domains") or 0),
+        "dofollow_backlinks": max(0, total - nofollow),
+        "nofollow_backlinks": nofollow,
+        "broken_backlinks": int(pick(item, "broken_backlinks") or 0),
+        "broken_pages": int(pick(item, "broken_pages") or 0),
+        "first_seen": first_seen[:10] or None,
+    }
+
+
+def fetch_domain_pages_summary(target, limit=1000, filters=None, order_by=None):
+    """Return page-level backlink summaries for a target domain."""
+    payload = {"target": target, "limit": limit}
+    if filters:
+        payload["filters"] = filters
+    if order_by:
+        payload["order_by"] = order_by
+    result = dfs_post("/backlinks/domain_pages_summary/live", [payload])
+    rows = []
+    for item in dfs_items(result):
+        if item.get("type") != "backlinks_page_summary":
+            continue
+        rows.append(parse_page_summary(item))
+    return rows
+
+
 def run(property_key, today, dry_run=False):
     cfg = LLM_PROPERTIES.get(property_key)
     if not cfg:
@@ -189,6 +224,17 @@ def run(property_key, today, dry_run=False):
 
     anchors = fetch_anchors(target)
     print(f"  anchor texts: {len(anchors)}")
+
+    top_pages = fetch_domain_pages_summary(target, limit=1000, order_by=["backlinks,desc"])
+    broken_pages = fetch_domain_pages_summary(
+        target, limit=1000,
+        filters=[["broken_backlinks", ">", 0]],
+        order_by=["backlinks,desc"])
+    pages_by_url = {}
+    for r in top_pages + broken_pages:
+        pages_by_url[r["url"]] = r
+    pages = list(pages_by_url.values())
+    print(f"  page summaries: {len(pages)} ({len(broken_pages)} broken)")
 
     if dry_run:
         return
@@ -215,6 +261,12 @@ def run(property_key, today, dry_run=False):
         con.execute(
             "INSERT OR REPLACE INTO anchor_distribution VALUES (?,?,?,?,?)",
             (today, property_key, a["anchor"], a["backlinks"], a["dofollow_backlinks"]))
+    for p in pages:
+        con.execute(
+            "INSERT OR REPLACE INTO backlink_pages VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (today, property_key, p["url"], p["rank"], p["backlinks"],
+             p["refdomains"], p["dofollow_backlinks"], p["nofollow_backlinks"],
+             p["broken_backlinks"], p["broken_pages"], p["first_seen"]))
     con.commit()
     print(f"  saved to {DB_PATH.name}")
 
@@ -238,6 +290,9 @@ def run(property_key, today, dry_run=False):
     ])
     supabase_upsert("anchor_distribution", [
         {"day": today, "property": property_key, **a} for a in anchors
+    ])
+    supabase_upsert("backlink_pages", [
+        {"day": today, "property": property_key, **p} for p in pages
     ])
 
 

@@ -381,21 +381,24 @@ async function handleBacklinks(env) {
   const details = {};
   const domains = {};
   const anchors = {};
+  const pages = {};
   await Promise.all(
     Object.entries(latestByProp).map(async ([prop, day]) => {
       const p = `&property=eq.${encodeURIComponent(prop)}`;
-      const [d, dom, a] = await Promise.all([
+      const [d, dom, a, pg] = await Promise.all([
         sbFetchAll(env, `/backlink_details?select=*&day=eq.${day}${p}&order=rank.desc,source_url`),
         sbFetchAll(env, `/referring_domains?select=*&day=eq.${day}${p}&order=rank.desc,domain`),
         sbFetchAll(env, `/anchor_distribution?select=*&day=eq.${day}${p}&order=backlinks.desc,anchor`),
+        sbFetchAll(env, `/backlink_pages?select=*&day=eq.${day}${p}&order=backlinks.desc,url`),
       ]);
       details[prop] = { day, rows: d };
       domains[prop] = { day, rows: dom };
       anchors[prop] = { day, rows: a };
+      pages[prop] = { day, rows: pg };
     })
   );
 
-  return { snapshots, events, details, domains, anchors };
+  return { snapshots, events, details, domains, anchors, pages };
 }
 
 // ------------------------------------------------------------------- /api/llm

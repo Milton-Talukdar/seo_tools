@@ -410,6 +410,52 @@
     return '<div class="bl-section' + (id === 'overview' ? ' active' : '') + '" id="bl-' + id + '">' + html + '</div>';
   }
 
+  function drScore(rank) {
+    return Math.min(100, Math.round((rank || 0) / 10));
+  }
+
+  function drGaugeHtml(score) {
+    const pct = Math.min(100, Math.max(0, score));
+    const color = pct >= 70 ? '#059669' : pct >= 40 ? '#d97706' : '#dc2626';
+    return '<div class="dr-gauge"><svg viewBox="0 0 36 36">' +
+      '<path class="dr-ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />' +
+      '<path class="dr-ring-fill" stroke="' + color + '" stroke-dasharray="' + pct + ', 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />' +
+      '</svg><div class="dr-num">' + esc(String(score)) + '</div></div>';
+  }
+
+  function renderBacklinkProfile(prop, snap, previous, events) {
+    const cfg = PROPERTIES[prop] || { label: prop, domain: prop };
+    const score = drScore(snap.rank);
+    const prevSnap = previous || {};
+    const blDelta = (snap.backlinks || 0) - (prevSnap.backlinks || 0);
+    const rdDelta = (snap.refdomains || 0) - (prevSnap.refdomains || 0);
+    function deltaHtml(delta) {
+      if (!prevSnap.day) return '<span class="bl-delta first">first run</span>';
+      const cls = delta >= 0 ? 'up' : 'down';
+      const sign = delta >= 0 ? '+' : '';
+      return '<span class="bl-delta ' + cls + '">' + sign + esc(fmtNum(delta)) + ' vs ' + esc(prevSnap.day) + '</span>';
+    }
+    let newCount = 0, lostCount = 0;
+    for (const e of events) {
+      if (e.property === prop && e.domain === '(total)') {
+        if (e.event === 'new') newCount = e.rank || 0;
+        if (e.event === 'lost') lostCount = e.rank || 0;
+      }
+    }
+    const chips = '<span class="chip you">+' + esc(fmtNum(newCount)) + ' new</span>' +
+      '<span class="chip none">-' + esc(fmtNum(lostCount)) + ' lost</span>';
+    return '<div class="bl-profile">' +
+      drGaugeHtml(score) +
+      '<div class="bl-profile-meta"><div class="bl-profile-title">' + esc(cfg.label) + '</div>' +
+      '<div class="bl-profile-domain">' + esc(cfg.domain) + '</div>' +
+      '<div class="bl-profile-dr">DR (DFS) ' + esc(String(score)) + '</div></div>' +
+      '<div class="bl-stat"><div class="bl-stat-num">' + esc(fmtNum(snap.backlinks)) + '</div>' +
+      '<div class="bl-stat-label">Backlinks ' + deltaHtml(blDelta) + '</div></div>' +
+      '<div class="bl-stat"><div class="bl-stat-num">' + esc(fmtNum(snap.refdomains)) + '</div>' +
+      '<div class="bl-stat-label">Referring domains ' + deltaHtml(rdDelta) + '</div></div>' +
+      '<div class="bl-chips">' + chips + '</div></div>';
+  }
+
   async function loadBacklinks() {
     const el = document.getElementById('panel-backlinks');
     try {
@@ -423,6 +469,15 @@
       }
 
       // ---- Overview tab
+      const latestByProp = {}, previousByProp = {};
+      for (const r of snaps) {
+        if (!latestByProp[r.property]) latestByProp[r.property] = r;
+        else if (!previousByProp[r.property]) previousByProp[r.property] = r;
+      }
+      const profileCards = Object.keys(latestByProp).sort().map(function (prop) {
+        return renderBacklinkProfile(prop, latestByProp[prop], previousByProp[prop], events);
+      }).join('');
+
       const mx = Math.max.apply(null, snaps.map(function (r) { return r.refdomains || 0; }).concat([1]));
       const snapRows = snaps.map(function (r) {
         const label = (PROPERTIES[r.property] || { label: r.property || '—' }).label;
@@ -433,7 +488,8 @@
           '<td><div class="bar"><div style="width:' + ((r.refdomains || 0) / mx * 100).toFixed(0) + '%"></div></div></td>' +
           '<td>' + esc(r.rank) + '</td></tr>';
       }).join('');
-      const overviewHtml = '<div class="card"><b>Profile totals</b><table>' +
+      const overviewHtml = '<div class="bl-profile-wrap">' + profileCards + '</div>' +
+        '<div class="card"><b>Profile totals</b><table>' +
         '<tr><th>date</th><th>property</th><th>backlinks</th><th>refdomains</th><th></th><th>DFS rank</th></tr>' +
         snapRows + '</table></div>' +
         (events.length ? renderBacklinkEvents(events) : '');
@@ -450,11 +506,18 @@
       const anchorsByProp = data.anchors || {};
       const anchorsHtml = renderDetailTabs(anchorsByProp, 'anchor');
 
+      // ---- Top pages by backlinks + broken pages tabs
+      const pagesByProp = data.pages || {};
+      const topPagesHtml = renderPageTabs(pagesByProp, 'top-pages');
+      const brokenPagesHtml = renderPageTabs(pagesByProp, 'broken-pages');
+
       const tabs = [
         { id: 'overview', label: 'Overview' },
         { id: 'top', label: 'Top Backlinks' },
         { id: 'domains', label: 'Referring Domains' },
         { id: 'anchors', label: 'Anchor Text' },
+        { id: 'pages', label: 'Top Pages by Backlinks' },
+        { id: 'broken', label: 'Broken Pages' },
       ];
       const tabHtml = '<div class="prop-tabs no-print">' + tabs.map(function (t, i) {
         return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-bl="' + t.id + '">' + t.label + '</button>';
@@ -465,6 +528,8 @@
         renderBacklinkTab('Top Backlinks', 'top', topHtml) +
         renderBacklinkTab('Referring Domains', 'domains', domainsHtml) +
         renderBacklinkTab('Anchor Text', 'anchors', anchorsHtml) +
+        renderBacklinkTab('Top Pages by Backlinks', 'pages', topPagesHtml) +
+        renderBacklinkTab('Broken Pages', 'broken', brokenPagesHtml) +
         stampHtml(snaps[0].day);
 
       initBacklinkTabs(el);
@@ -538,6 +603,67 @@
       return '<div class="bl-prop' + (i === 0 ? ' active' : '') + '" id="blprop-' + esc(p) + '-' + kind + '">' +
         '<div class="card">' + searchBox + table +
         '<p class="sub">Latest snapshot ' + esc(day) + ' · ' + rows.length + ' rows from DataForSEO.</p></div></div>';
+    }).join('');
+
+    return tabBtns + panels;
+  }
+
+  function renderPageTabs(byProp, kind) {
+    const props = Object.keys(byProp);
+    if (!props.length) {
+      return '<div class="card">No page-level backlink data available yet. Run <code>python3 backlinks.py</code> to populate.</div>';
+    }
+    const hasBoth = props.length > 1;
+    const tabBtns = hasBoth ? '<div class="prop-tabs sub-tabs no-print">' + props.map(function (p, i) {
+      return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-blprop="' + esc(p) + '">' + esc((PROPERTIES[p] || { label: p }).label) + '</button>';
+    }).join('') + '</div>' : '';
+
+    const panels = props.map(function (p, i) {
+      let rows = (byProp[p].rows || []);
+      const day = byProp[p].day || '';
+      if (kind === 'top-pages') {
+        rows = rows.slice().sort(function (a, b) { return (b.backlinks || 0) - (a.backlinks || 0); });
+      } else if (kind === 'broken-pages') {
+        rows = rows.filter(function (r) { return (r.broken_backlinks || 0) > 0; })
+          .sort(function (a, b) { return (b.broken_backlinks || 0) - (a.broken_backlinks || 0); });
+      }
+      const maxBl = Math.max.apply(null, rows.map(function (r) { return r.backlinks || 0; }).concat([1]));
+      const maxBr = Math.max.apply(null, rows.map(function (r) { return r.broken_backlinks || 0; }).concat([1]));
+      let table = '';
+      if (kind === 'top-pages') {
+        table = '<table class="backlink-detail-table bl-pages-table">' +
+          '<thead><tr><th>Page URL</th><th>Backlinks</th><th>Ref domains</th><th>Dofollow</th><th>Nofollow</th><th>Broken BL</th><th>Rank</th><th>First seen</th></tr></thead><tbody>' +
+          rows.slice(0, 1000).map(function (r) {
+            const pct = Math.round(((r.backlinks || 0) / maxBl) * 100);
+            return '<tr data-search="' + esc(String(r.url || '').toLowerCase()) + '">' +
+              '<td><a href="' + esc(r.url || '') + '" target="_blank" rel="noopener">' + esc(shortDomain(r.url || '')) + '</a><br><span class="sub">' + esc(r.url || '') + '</span></td>' +
+              '<td class="num"><b>' + fmtNum(r.backlinks || 0) + '</b><div class="bar"><div style="width:' + pct + '%"></div></div></td>' +
+              '<td class="num">' + fmtNum(r.refdomains || 0) + '</td>' +
+              '<td class="num">' + fmtNum(r.dofollow_backlinks || 0) + '</td>' +
+              '<td class="num">' + fmtNum(r.nofollow_backlinks || 0) + '</td>' +
+              '<td class="num">' + (r.broken_backlinks ? '<span class="chip none">' + fmtNum(r.broken_backlinks) + '</span>' : '—') + '</td>' +
+              '<td class="num">' + esc(String(r.rank || '—')) + '</td>' +
+              '<td class="num">' + esc(r.first_seen || '—') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      } else {
+        table = '<table class="backlink-detail-table bl-pages-table">' +
+          '<thead><tr><th>Page URL</th><th>Broken backlinks</th><th>Broken pages</th><th>Total backlinks</th><th>Ref domains</th><th>Rank</th><th>First seen</th></tr></thead><tbody>' +
+          rows.slice(0, 1000).map(function (r) {
+            const pct = Math.round(((r.broken_backlinks || 0) / maxBr) * 100);
+            return '<tr data-search="' + esc(String(r.url || '').toLowerCase()) + '">' +
+              '<td><a href="' + esc(r.url || '') + '" target="_blank" rel="noopener">' + esc(shortDomain(r.url || '')) + '</a><br><span class="sub">' + esc(r.url || '') + '</span></td>' +
+              '<td class="num"><b>' + fmtNum(r.broken_backlinks || 0) + '</b><div class="bar"><div style="width:' + pct + '%"></div></div></td>' +
+              '<td class="num">' + fmtNum(r.broken_pages || 0) + '</td>' +
+              '<td class="num">' + fmtNum(r.backlinks || 0) + '</td>' +
+              '<td class="num">' + fmtNum(r.refdomains || 0) + '</td>' +
+              '<td class="num">' + esc(String(r.rank || '—')) + '</td>' +
+              '<td class="num">' + esc(r.first_seen || '—') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      }
+      const searchBox = '<input type="search" class="bl-search" placeholder="Filter ' + rows.length + ' pages…" data-blsearch="' + esc(p) + '">';
+      return '<div class="bl-prop' + (i === 0 ? ' active' : '') + '" id="blprop-' + esc(p) + '-' + kind + '">' +
+        '<div class="card">' + searchBox + table +
+        '<p class="sub">Latest snapshot ' + esc(day) + ' · ' + rows.length + ' pages from DataForSEO.</p></div></div>';
     }).join('');
 
     return tabBtns + panels;

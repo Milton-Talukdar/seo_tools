@@ -341,3 +341,34 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .annotation-form input, .annotation-form textarea { flex: 1 1 100%; }
   .queue-owner, .queue-note { min-width: 80px; }
 }
+
+/* ---- backlinks overview + page tables ---- */
+.bl-profile-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; margin: 14px 0 22px; }
+.bl-profile { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; box-shadow: var(--shadow); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.dr-gauge { position: relative; width: 80px; height: 80px; flex: none; }
+.dr-gauge svg { transform: rotate(-90deg); width: 100%; height: 100%; }
+.dr-ring-bg { fill: none; stroke: #e8ecf4; stroke-width: 3; }
+.dr-ring-fill { fill: none; stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray .6s ease; }
+.dr-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; color: var(--ink); }
+.bl-profile-meta { flex: 1; min-width: 140px; }
+.bl-profile-title { font-size: 16px; font-weight: 700; color: var(--ink); }
+.bl-profile-domain { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.bl-profile-dr { font-size: 12px; font-weight: 700; color: var(--accent); margin-top: 6px; }
+.bl-stat { text-align: center; min-width: 100px; }
+.bl-stat-num { font-size: 24px; font-weight: 800; color: var(--ink); line-height: 1.1; }
+.bl-stat-label { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.bl-delta { display: inline-block; margin-top: 2px; font-size: 11px; font-weight: 700; }
+.bl-delta.up { color: var(--you); }
+.bl-delta.down { color: var(--rose); }
+.bl-delta.first { color: var(--muted); font-weight: 600; }
+.bl-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.bl-pages-table td { vertical-align: middle; font-size: 12px; }
+.bl-pages-table td a { word-break: break-all; font-weight: 600; color: var(--accent); text-decoration: none; }
+.bl-pages-table td a:hover { text-decoration: underline; }
+.bl-pages-table td .sub { display: block; margin-top: 2px; font-size: 11px; line-height: 1.35; }
+.bl-pages-table .bar { margin-top: 5px; }
+@media (max-width: 640px) {
+  .bl-profile-wrap { grid-template-columns: 1fr; }
+  .bl-profile { flex-direction: column; align-items: flex-start; }
+  .bl-chips { margin-left: 0; }
+}

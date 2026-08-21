@@ -160,6 +160,13 @@ def init_db():
         day TEXT, property TEXT, anchor TEXT, backlinks INTEGER,
         dofollow_backlinks INTEGER,
         PRIMARY KEY(day, property, anchor));
+    CREATE TABLE IF NOT EXISTS backlink_pages(
+        day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle',
+        url TEXT, rank INTEGER, backlinks INTEGER DEFAULT 0,
+        refdomains INTEGER DEFAULT 0, dofollow_backlinks INTEGER DEFAULT 0,
+        nofollow_backlinks INTEGER DEFAULT 0, broken_backlinks INTEGER DEFAULT 0,
+        broken_pages INTEGER DEFAULT 0, first_seen TEXT,
+        PRIMARY KEY(day, property, url));
     CREATE TABLE IF NOT EXISTS llm_snapshots(
         day TEXT, platform TEXT, prompt TEXT, mentions TEXT,
         cited_mine INTEGER, links TEXT, answer TEXT,
@@ -300,6 +307,20 @@ def init_db():
             con.execute("DROP TABLE refdomain_events")
             con.execute("ALTER TABLE refdomain_events_new RENAME TO refdomain_events")
             print("[db] migrated refdomain_events to per-property (day, property, event, domain) PK")
+
+    # v7 migration: backlink_pages table for Ahrefs-style page-level reports
+    has_bl_pages = con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='backlink_pages'").fetchone()
+    if not has_bl_pages:
+        con.execute("""
+            CREATE TABLE backlink_pages(
+                day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle',
+                url TEXT, rank INTEGER, backlinks INTEGER DEFAULT 0,
+                refdomains INTEGER DEFAULT 0, dofollow_backlinks INTEGER DEFAULT 0,
+                nofollow_backlinks INTEGER DEFAULT 0, broken_backlinks INTEGER DEFAULT 0,
+                broken_pages INTEGER DEFAULT 0, first_seen TEXT,
+                PRIMARY KEY(day, property, url))
+        """)
+        print("[db] created backlink_pages table")
 
     return con
 
