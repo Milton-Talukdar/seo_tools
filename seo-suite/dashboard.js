@@ -1523,8 +1523,8 @@
     const el = document.getElementById('panel-gsc-llm-queries');
     try {
       const [circle, fit] = await Promise.all([
-        api('gsc_llm_queries?property=vantagecircle&_v=2').catch(function () { return { queries: [] }; }),
-        api('gsc_llm_queries?property=vantagefit&_v=2').catch(function () { return { queries: [] }; }),
+        api('gsc_llm_queries?property=vantagecircle&_v=5').catch(function () { return { queries: [] }; }),
+        api('gsc_llm_queries?property=vantagefit&_v=5').catch(function () { return { queries: [] }; }),
       ]);
 
       const tabs = [

@@ -119,7 +119,7 @@ def fetch_gsc_query_pages(credentials, site_url, start_date, end_date):
 
 
 def aggregate_by_query(rows):
-    """Aggregate query-page rows by query, picking the top page by clicks."""
+    """Aggregate query-page rows by query, picking the top page by clicks, then impressions."""
     by_query = {}
     for r in rows:
         q = r["query"]
@@ -130,6 +130,7 @@ def aggregate_by_query(rows):
                 "impressions": 0,
                 "page": "",
                 "page_clicks": 0,
+                "page_impressions": 0,
                 "position_sum": 0.0,
                 "position_weight": 0,
             }
@@ -140,10 +141,14 @@ def aggregate_by_query(rows):
         if r["impressions"] > 0:
             agg["position_sum"] += r["position"] * r["impressions"]
             agg["position_weight"] += r["impressions"]
-        # Track top page by clicks
-        if r["page"] and r["clicks"] > agg["page_clicks"]:
+        # Track top page by clicks, then impressions
+        if r["page"] and (
+            r["clicks"] > agg["page_clicks"]
+            or (r["clicks"] == agg["page_clicks"] and r["impressions"] > agg["page_impressions"])
+        ):
             agg["page"] = r["page"]
             agg["page_clicks"] = r["clicks"]
+            agg["page_impressions"] = r["impressions"]
 
     out = []
     for q, agg in by_query.items():
