@@ -573,6 +573,7 @@ const CACHE_TTL = {
   freshness_queue: 60,
   llm_gaps: 1800,
   llm_prompts: 1800,
+  gsc_llm_queries: 1800,
 };
 
 function cacheEnabled(env) {
@@ -987,6 +988,43 @@ async function handleLlmPrompts(env, url) {
   return { property, day, you, prompts };
 }
 
+// ---------------------------------------------------------------- /api/gsc_llm_queries
+async function handleGscLlmQueries(env, url) {
+  const property = url.searchParams.get("property") || "vantagecircle";
+
+  const dayRows = await sbFetch(
+    env,
+    `/gsc_llm_queries?select=day&property=eq.${encodeURIComponent(property)}&order=day.desc&limit=1`
+  );
+  if (!dayRows.length) return { property, day: null, queries: [], total_clicks: 0, total_impressions: 0 };
+  const day = dayRows[0].day;
+
+  const rows = await sbFetchAll(
+    env,
+    `/gsc_llm_queries?select=query,clicks,impressions,ctr,position,llm_score,llm_signals&day=eq.${day}&property=eq.${encodeURIComponent(property)}&order=llm_score.desc,clicks.desc`
+  );
+
+  let totalClicks = 0;
+  let totalImpressions = 0;
+  for (const r of rows) {
+    r.ctr = r.ctr != null ? Math.round(r.ctr * 1000) / 10 : 0;
+    r.position = r.position != null ? Math.round(r.position * 10) / 10 : 0;
+    let signals = [];
+    try { signals = JSON.parse(r.llm_signals || "[]"); } catch (err) {}
+    r.signals = signals;
+    totalClicks += r.clicks || 0;
+    totalImpressions += r.impressions || 0;
+  }
+
+  return {
+    property,
+    day,
+    queries: rows,
+    total_clicks: totalClicks,
+    total_impressions: totalImpressions,
+  };
+}
+
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
@@ -1029,6 +1067,7 @@ export default {
         else if (route === "freshness_queue") result = await handleFreshnessQueue(env, request, url);
         else if (route === "llm_gaps") result = await handleLlmGaps(env, url);
         else if (route === "llm_prompts") result = await handleLlmPrompts(env, url);
+        else if (route === "gsc_llm_queries") result = await handleGscLlmQueries(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));

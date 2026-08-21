@@ -1,2 +1,5 @@
 .env
+.env.rtf
+.env.*
+seo_suite.db
 __pycache__/

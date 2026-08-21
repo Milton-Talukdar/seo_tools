@@ -1530,6 +1530,65 @@
     });
   }
 
+  // ---------------------------------------------------------------- gsc llm queries
+  async function loadGscLlmQueries() {
+    const el = document.getElementById('panel-gsc-llm-queries');
+    try {
+      const [circle, fit] = await Promise.all([
+        api('gsc_llm_queries?property=vantagecircle').catch(function () { return { queries: [] }; }),
+        api('gsc_llm_queries?property=vantagefit').catch(function () { return { queries: [] }; }),
+      ]);
+
+      const tabs = [
+        { key: 'vantagecircle', label: 'Vantage Circle', data: circle },
+        { key: 'vantagefit', label: 'Vantage Fit', data: fit },
+      ];
+
+      const anyData = tabs.some(function (t) { return t.data.queries && t.data.queries.length; });
+      if (!anyData) {
+        el.innerHTML = '<h2>GSC LLM Queries</h2><div class="card">No GSC LLM query data available yet. Run <code>python3 gsc_llm_queries.py</code> to populate.</div>';
+        return;
+      }
+
+      const tabHtml = '<div class="prop-tabs no-print">' + tabs.map(function (t, i) {
+        return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-prop="' + esc(t.key) + '">' + esc(t.label) + '</button>';
+      }).join('') + '</div>';
+
+      const panelsHtml = tabs.map(function (t, i) {
+        const rows = (t.data.queries || []).map(function (q) {
+          const signals = (q.signals || []).map(function (s) {
+            return '<span class="chip">' + esc(s.replace(/_/g, ' ')) + '</span>';
+          }).join(' ');
+          return '<tr>' +
+            '<td>' + esc(q.query) + '</td>' +
+            '<td class="num">' + esc(String(q.llm_score || 0)) + '</td>' +
+            '<td>' + (signals || '<span class="sub">—</span>') + '</td>' +
+            '<td class="num">' + fmtNum(q.clicks || 0) + '</td>' +
+            '<td class="num">' + fmtNum(q.impressions || 0) + '</td>' +
+            '<td class="num">' + esc(String(q.ctr != null ? q.ctr + '%' : '—')) + '</td>' +
+            '<td class="num">' + esc(String(q.position != null ? q.position : '—')) + '</td></tr>';
+        }).join('');
+        const summary = '<div class="kpis">' +
+          '<div class="kpi"><div class="num">' + fmtNum(t.data.queries.length) + '</div><div class="label">probable LLM queries</div></div>' +
+          '<div class="kpi"><div class="num">' + fmtNum(t.data.total_clicks || 0) + '</div><div class="label">clicks</div></div>' +
+          '<div class="kpi"><div class="num">' + fmtNum(t.data.total_impressions || 0) + '</div><div class="label">impressions</div></div>' +
+          '</div>';
+        const body = '<div class="card">' + summary +
+          '<table class="gsc-llm-table">' +
+          '<thead><tr><th>Query</th><th>Score</th><th>Signals</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr></thead>' +
+          '<tbody>' + (rows || '<tr><td colspan="7" class="sub">No queries yet.</td></tr>') + '</tbody></table>' +
+          '<p class="sub">Queries from Google Search Console that match LLM-style patterns (questions, comparisons, long-tail). Latest run ' + esc(t.data.day || '—') + '.</p></div>';
+        return '<div class="gsc-llm-prop' + (i === 0 ? ' active' : '') + '" id="gsc-llm-' + esc(t.key) + '">' + body + '</div>';
+      }).join('');
+
+      const latestDay = tabs.map(function (t) { return t.data.day; }).filter(Boolean).sort().pop();
+      el.innerHTML = '<h2>GSC LLM Queries · probable AI searches</h2>' + tabHtml + panelsHtml + stampHtml(latestDay);
+      initPropTabs(el, 'gsc-llm-prop');
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
   // ---------------------------------------------------------------- boot
   document.addEventListener('DOMContentLoaded', function () {
     initSidebar();
@@ -1540,6 +1599,7 @@
       loadFreshness(),
       loadLLM(),
       loadLlmPrompts(),
+      loadGscLlmQueries(),
       loadCompetitor(),
     ]).catch(function (e) {
       console.error('Dashboard load error:', e);

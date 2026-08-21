@@ -67,6 +67,26 @@ enough — LLM answers drift slowly), LLM discovery monthly (self-throttled), an
 content freshness / decay on the 1st of every month (or `--force`).
 Manual runs (Actions tab → Run workflow) always execute everything.
 
+## Deploying the dashboard
+
+The dashboard is a Cloudflare Pages site (`orbit-v4o.pages.dev`). The repo now
+includes:
+
+- `wrangler.toml` — Pages project config
+- `.github/workflows/deploy.yml` — auto-deploys on every push to `main`/`master`
+
+Required GitHub secrets:
+
+- `CLOUDFLARE_API_TOKEN` — create one at Cloudflare dashboard → My Profile → API
+  Tokens → Create Token → Use the **"Edit Cloudflare Workers"** template
+- `CLOUDFLARE_ACCOUNT_ID` — shown on the right side of any Cloudflare dashboard page
+
+Manual deploy from this directory:
+
+```bash
+npx wrangler pages deploy . --project-name=orbit-v4o
+```
+
 ## Cost
 
 - Rank tracking: ~$0.0006/keyword → 994 keywords weekly ≈ $0.60/run ≈ **$31/yr**
