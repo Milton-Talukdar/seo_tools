@@ -573,7 +573,7 @@ const CACHE_TTL = {
   freshness_queue: 60,
   llm_gaps: 1800,
   llm_prompts: 1800,
-  gsc_llm_queries: 1800,
+  gsc_llm_queries_v2: 1800,
 };
 
 function cacheEnabled(env) {
@@ -1067,7 +1067,7 @@ export default {
         else if (route === "freshness_queue") result = await handleFreshnessQueue(env, request, url);
         else if (route === "llm_gaps") result = await handleLlmGaps(env, url);
         else if (route === "llm_prompts") result = await handleLlmPrompts(env, url);
-        else if (route === "gsc_llm_queries") result = await handleGscLlmQueries(env, url);
+        else if (route === "gsc_llm_queries_v2") result = await handleGscLlmQueries(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
