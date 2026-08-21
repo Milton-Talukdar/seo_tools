@@ -1028,7 +1028,7 @@ async function handleGscLlmQueries(env, url) {
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v12:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v13:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
