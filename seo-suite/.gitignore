@@ -3,3 +3,4 @@
 .env.*
 seo_suite.db
 __pycache__/
+.wrangler/
