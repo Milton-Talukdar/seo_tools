@@ -205,7 +205,9 @@ def sync_repo(repo_path: Path, property: str, site: str, dry_run: bool = False):
             continue
 
         authors = meta.get("author") or meta.get("authors") or []
-        if isinstance(authors, str):
+        if isinstance(authors, dict):
+            authors = [authors.get("name")] if authors.get("name") else []
+        elif isinstance(authors, str):
             authors = [a.strip() for a in authors.split(",") if a.strip()]
         tags = meta.get("tags") or []
         if isinstance(tags, str):

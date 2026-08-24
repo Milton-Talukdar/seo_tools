@@ -1994,7 +1994,13 @@
 
   // ---------------------------------------------------------------- content inventory
   function parseJsonList(v) {
-    try { return JSON.parse(v || '[]'); } catch (e) { return []; }
+    try {
+      const parsed = JSON.parse(v || '[]');
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object') return [parsed.name || parsed.toString()];
+      if (typeof parsed === 'string') return [parsed];
+      return [];
+    } catch (e) { return []; }
   }
 
   function daysAgo(iso) {
