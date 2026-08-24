@@ -27,6 +27,7 @@
       id: 'seo', label: 'SEO', icon: ICONS.seo,
       groups: [
         { label: 'Rank', sections: [{ id: 'rank', label: 'Rank Tracker', panel: 'rank', tab: 'vantagecircle' }] },
+        { label: 'Research', sections: [{ id: 'keywords', label: 'Keyword Research', panel: 'keywords' }] },
         { label: 'Links', sections: [{ id: 'backlinks', label: 'Backlinks', panel: 'backlinks' }] }
       ]
     },
@@ -3144,12 +3145,229 @@
     applyFilter();
   }
 
+  // ---------------------------------------------------------------- keyword research
+  async function loadKeywords() {
+    const el = document.getElementById('panel-keywords');
+    try {
+      const [kwData, gapData] = await Promise.all([api('keywords'), api('keyword_gaps')]);
+      const rows = kwData.rows || [];
+      const gaps = gapData.rows || [];
+      const props = ['vantagecircle', 'vantagefit'];
+      const clusters = [''].concat((kwData.clusters || []).sort());
+
+      const propOpts = props.map(function (p) {
+        return '<option value="' + esc(p) + '">' + esc(PROPERTIES[p].label) + '</option>';
+      }).join('');
+      const clusterOpts = clusters.map(function (c) {
+        return '<option value="' + esc(c) + '">' + (c ? esc(c) : 'All clusters') + '</option>';
+      }).join('');
+      const statusOpts = ['idea', 'targeting', 'ranking', 'ignored', 'pruned'].map(function (s) {
+        return '<option value="' + esc(s) + '">' + esc(s) + '</option>';
+      }).join('');
+
+      const byStatus = {};
+      rows.forEach(function (r) { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
+
+      const kpiHtml = '<div class="kpis">' +
+        '<div class="kpi"><div class="num">' + fmtNum(rows.length) + '</div><div class="label">Tracked keywords</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(byStatus.targeting || 0) + '</div><div class="label">Targeting</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(byStatus.ranking || 0) + '</div><div class="label">Ranking</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(gaps.length) + '</div><div class="label">Gaps from rank data</div></div>' +
+        '</div>';
+
+      function intentChip(intent) {
+        if (!intent) return '<span class="sub">—</span>';
+        const cls = { informational: '', navigational: 'cite', commercial: 'you', transactional: 'rose' }[intent] || '';
+        return '<span class="chip ' + cls + '">' + esc(intent) + '</span>';
+      }
+
+      const tableRows = rows.map(function (r) {
+        const search = [r.keyword, r.cluster, r.search_intent, r.source, r.status].filter(Boolean).join(' ').toLowerCase();
+        return '<tr data-search="' + esc(search) + '" data-property="' + esc(r.property) + '" data-cluster="' + esc(r.cluster || '') + '" data-status="' + esc(r.status) + '" data-volume="' + (r.search_volume || 0) + '" data-difficulty="' + (r.keyword_difficulty || 0) + '">' +
+          '<td><b>' + esc(r.keyword) + '</b></td>' +
+          '<td>' + esc(r.property) + '</td>' +
+          '<td>' + intentChip(r.search_intent) + '</td>' +
+          '<td class="num">' + fmtNum(r.search_volume || 0) + '</td>' +
+          '<td class="num">' + (r.cpc ? '$' + r.cpc.toFixed(2) : '—') + '</td>' +
+          '<td class="num">' + (r.keyword_difficulty || '—') + '</td>' +
+          '<td>' + (r.cluster ? '<span class="chip">' + esc(r.cluster) + '</span>' : '<span class="sub">—</span>') + '</td>' +
+          '<td><span class="chip ' + (r.status === 'ranking' ? 'you' : (r.status === 'targeting' ? 'amber' : '')) + '">' + esc(r.status) + '</span></td>' +
+          '<td>' + (r.target_page ? '<a href="' + esc(r.target_page) + '" target="_blank">page</a>' : '<button class="kw-add-pipeline" data-keyword="' + esc(r.keyword) + '" data-property="' + esc(r.property) + '">+ pipeline</button>') + '</td>' +
+          '</tr>';
+      }).join('');
+
+      const gapRows = gaps.slice(0, 50).map(function (r) {
+        return '<tr><td>' + esc(r.keyword) + '</td><td>' + esc(r.property) + '</td><td class="num">' + fmtNum(r.rank_signals || 0) + '</td>' +
+          '<td><button class="kw-add" data-keyword="' + esc(r.keyword) + '" data-property="' + esc(r.property) + '">Track</button></td></tr>';
+      }).join('');
+
+      const filterHtml = '<div class="table-tools no-print kw-tools">' +
+        '<select class="kw-property"><option value="all">All properties</option>' + propOpts + '</select>' +
+        '<select class="kw-status"><option value="all">All statuses</option>' + statusOpts + '</select>' +
+        '<select class="kw-cluster"><option value="">All clusters</option>' + clusterOpts + '</select>' +
+        '<input class="kw-search" type="search" placeholder="Search keywords…">' +
+        '<input class="kw-min-volume" type="number" placeholder="Min volume" style="max-width:100px">' +
+        '<button class="kw-export" type="button">Export CSV</button>' +
+        '<span class="kw-count sub">' + fmtNum(rows.length) + ' keywords</span></div>';
+
+      const tableHtml = '<div class="card">' + filterHtml +
+        '<table class="kw-table"><thead><tr>' +
+        '<th class="sortable" data-sort="keyword">Keyword <span class="arrow"></span></th>' +
+        '<th>Property</th>' +
+        '<th>Intent</th>' +
+        '<th class="sortable" data-sort="volume">Volume <span class="arrow"></span></th>' +
+        '<th>CPC</th>' +
+        '<th class="sortable" data-sort="difficulty">KD <span class="arrow"></span></th>' +
+        '<th>Cluster</th>' +
+        '<th class="sortable" data-sort="status">Status <span class="arrow"></span></th>' +
+        '<th>Action</th>' +
+        '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+
+      const gapsHtml = gaps.length ? '<div class="card" style="margin-top:14px"><h3 style="margin:0 0 10px">Keyword gaps from rank data</h3>' +
+        '<table class="kw-gap-table"><thead><tr><th>Keyword</th><th>Property</th><th>Rank signals</th><th></th></tr></thead><tbody>' + gapRows + '</tbody></table></div>' : '';
+
+      el.innerHTML = '<h2>Keyword Research</h2>' + kpiHtml + tableHtml + gapsHtml;
+      initKeywordsInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  function initKeywordsInteractions() {
+    const wrap = document.getElementById('panel-keywords');
+    if (!wrap) return;
+    const search = wrap.querySelector('.kw-search');
+    const propSel = wrap.querySelector('.kw-property');
+    const statusSel = wrap.querySelector('.kw-status');
+    const clusterSel = wrap.querySelector('.kw-cluster');
+    const minVol = wrap.querySelector('.kw-min-volume');
+    const tbody = wrap.querySelector('tbody');
+    const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    const count = wrap.querySelector('.kw-count');
+    const ths = wrap.querySelectorAll('th.sortable');
+    let sortKey = 'volume', sortDir = -1;
+
+    function applyFilter() {
+      const q = search ? search.value.toLowerCase() : '';
+      const p = propSel ? propSel.value : 'all';
+      const s = statusSel ? statusSel.value : 'all';
+      const c = clusterSel ? clusterSel.value : '';
+      const mv = minVol ? parseInt(minVol.value || '0', 10) : 0;
+      let n = 0;
+      rows.forEach(function (r) {
+        let ok = true;
+        if (q && r.getAttribute('data-search').indexOf(q) === -1) ok = false;
+        if (ok && p !== 'all' && r.getAttribute('data-property') !== p) ok = false;
+        if (ok && s !== 'all' && r.getAttribute('data-status') !== s) ok = false;
+        if (ok && c && r.getAttribute('data-cluster') !== c) ok = false;
+        if (ok && mv && parseInt(r.getAttribute('data-volume') || '0', 10) < mv) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' keywords';
+    }
+
+    function keyVal(r, k) {
+      if (k === 'keyword') return r.cells[0].textContent.toLowerCase();
+      if (k === 'status') return r.getAttribute('data-status');
+      if (k === 'volume') return parseInt(r.getAttribute('data-volume') || '0', 10);
+      if (k === 'difficulty') return parseInt(r.getAttribute('data-difficulty') || '0', 10);
+      return '';
+    }
+
+    function cmp(a, b) {
+      const va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+      if (sortKey === 'volume' || sortKey === 'difficulty') return (va - vb) * sortDir;
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    }
+
+    function applySort() {
+      rows.sort(cmp);
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      ths.forEach(function (th) {
+        const arr = th.querySelector('.arrow');
+        if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+      });
+    }
+
+    ths.forEach(function (th) {
+      th.addEventListener('click', function () {
+        const k = th.getAttribute('data-sort');
+        if (k === sortKey) { sortDir = -sortDir; }
+        else { sortKey = k; sortDir = k === 'keyword' ? 1 : -1; }
+        applySort();
+      });
+    });
+
+    [search, propSel, statusSel, clusterSel, minVol].forEach(function (el) {
+      if (el) el.addEventListener('input', applyFilter);
+    });
+
+    const exportBtn = wrap.querySelector('.kw-export');
+    if (exportBtn) exportBtn.addEventListener('click', function () {
+      const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+      const visible = rows.filter(function (r) { return r.style.display !== 'none'; });
+      const csv = ['keyword,property,intent,search_volume,cpc,keyword_difficulty,cluster,status'].concat(visible.map(function (r) {
+        return [q(r.cells[0].textContent), q(r.cells[1].textContent), q(r.cells[2].textContent), r.getAttribute('data-volume'), q(r.cells[4].textContent), r.getAttribute('data-difficulty'), q(r.cells[6].textContent), q(r.getAttribute('data-status'))].join(',');
+      })).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = 'keywords-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    // Add gap keywords to tracking
+    wrap.querySelectorAll('.kw-add').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        const body = {
+          keyword: btn.getAttribute('data-keyword'),
+          property: btn.getAttribute('data-property'),
+          status: 'idea',
+          source: 'rank_gap'
+        };
+        try {
+          await fetch('/api/keywords', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          btn.textContent = 'Added';
+          btn.disabled = true;
+        } catch (err) {
+          alert('Failed: ' + err.message);
+        }
+      });
+    });
+
+    // Add tracked keyword to pipeline
+    wrap.querySelectorAll('.kw-add-pipeline').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        const body = {
+          title: btn.getAttribute('data-keyword'),
+          property: btn.getAttribute('data-property'),
+          stage: 'idea',
+          target_keyword: btn.getAttribute('data-keyword')
+        };
+        try {
+          await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          btn.textContent = 'In pipeline';
+          btn.disabled = true;
+        } catch (err) {
+          alert('Failed: ' + err.message);
+        }
+      });
+    });
+
+    applySort();
+    applyFilter();
+  }
+
   // ---------------------------------------------------------------- boot
   document.addEventListener('DOMContentLoaded', function () {
     initNavigation();
     Promise.all([
       loadSummary(),
       loadRank(),
+      loadKeywords(),
       loadBacklinks(),
       loadFreshness(),
       loadCannibalization(),

@@ -470,6 +470,20 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .ca-tools input[type="search"] { flex: 1; min-width: 120px; max-width: 260px; }
 .ca-count { margin-left: auto; }
 
+.kw-tools select, .kw-tools input[type="search"], .kw-tools input[type="number"] { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; font-size: 13px; font-family: inherit; background: #f8fafc; color: var(--ink); }
+.kw-tools input[type="search"] { flex: 1; min-width: 120px; max-width: 220px; }
+.kw-tools input[type="number"] { max-width: 100px; }
+.kw-export { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; font-family: inherit; }
+.kw-export:hover { background: #eef1f6; }
+.kw-count { margin-left: auto; }
+.kw-table td { vertical-align: middle; font-size: 12.5px; }
+.kw-table td:first-child { max-width: 260px; }
+.kw-gap-table { font-size: 12.5px; }
+.kw-gap-table td { vertical-align: middle; }
+.kw-add, .kw-add-pipeline { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--line); background: #f8fafc; font-size: 11.5px; font-weight: 600; color: var(--accent); cursor: pointer; font-family: inherit; }
+.kw-add:hover, .kw-add-pipeline:hover { background: #eef1f6; }
+.kw-add:disabled, .kw-add-pipeline:disabled { opacity: .6; cursor: default; }
+
 /* ---- content engine decay ---- */
 .cd-table td { vertical-align: middle; font-size: 12.5px; }
 .cd-table td:first-child { max-width: 300px; }

@@ -47,3 +47,14 @@ jobs:
           DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
         run: python seo_tools/seo-suite/rank_track.py
         working-directory: ${{ github.workspace }}
+
+      - name: Sync keyword research data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
+          DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
+        run: |
+          python seo_tools/seo-suite/keyword_research.py --import-rank
+          python seo_tools/seo-suite/keyword_research.py --import-gsc
+        working-directory: ${{ github.workspace }}

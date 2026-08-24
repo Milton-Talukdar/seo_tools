@@ -634,6 +634,8 @@ const CACHE_TTL = {
   content_decay: 1800,
   content_links: 1800,
   content_authors: 1800,
+  keywords: 1800,
+  keyword_gaps: 1800,
 };
 
 function cacheEnabled(env) {
@@ -1800,6 +1802,91 @@ async function handleContentAuthors(env, url) {
   return { authors, latest_gsc_day: latestGscDay, latest_rank_day: latestRankDay, latest_backlink_day: latestBacklinkDay };
 }
 
+// ---------------------------------------------------------------- /api/keywords
+async function handleKeywords(env, request, url) {
+  if (request.method === "POST") {
+    let body;
+    try {
+      body = await request.json();
+    } catch (e) {
+      return jsonError("Invalid JSON body", 400);
+    }
+    const allowed = ["keyword", "property", "country", "search_volume", "cpc", "competition", "keyword_difficulty", "search_intent", "source", "status", "target_page", "cluster", "notes"];
+    const row = {};
+    for (const k of allowed) {
+      if (body[k] !== undefined) row[k] = body[k];
+    }
+    if (!row.keyword || !row.status) return jsonError("keyword and status are required", 400);
+    if (!row.property) row.property = "vantagecircle";
+    if (!row.country) row.country = "us";
+    if (!row.source) row.source = "manual";
+    row.last_updated = new Date().toISOString();
+    try {
+      if (body.id) {
+        await sbPatch(env, "keywords", { id: body.id }, row);
+        return { ok: true };
+      }
+      const inserted = await sbPost(env, "keywords", row, "return=representation");
+      return { ok: true, row: inserted && inserted[0] ? inserted[0] : inserted };
+    } catch (e) {
+      return jsonError(e.message);
+    }
+  }
+
+  // GET
+  const property = url.searchParams.get("property") || "all";
+  const status = url.searchParams.get("status") || "all";
+  const cluster = url.searchParams.get("cluster") || "";
+  const q = url.searchParams.get("q") || "";
+  const minVolume = parseInt(url.searchParams.get("min_volume") || "0", 10);
+  const orderBy = url.searchParams.get("order_by") || "search_volume.desc";
+  const limit = parseInt(url.searchParams.get("limit") || "500", 10);
+
+  let rows = [];
+  try {
+    rows = await sbFetchAll(env, `/keywords?select=*&order=${encodeURIComponent(orderBy)}&limit=${limit}`);
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.includes("keywords") && (msg.includes("does not exist") || msg.includes("Not found"))) {
+      return { rows: [] };
+    }
+    throw e;
+  }
+
+  if (property !== "all") rows = rows.filter((r) => r.property === property);
+  if (status !== "all") rows = rows.filter((r) => r.status === status);
+  if (cluster) rows = rows.filter((r) => r.cluster === cluster);
+  if (minVolume) rows = rows.filter((r) => (r.search_volume || 0) >= minVolume);
+  if (q) {
+    const low = q.toLowerCase();
+    rows = rows.filter((r) => (r.keyword || "").toLowerCase().includes(low) || (r.cluster || "").toLowerCase().includes(low));
+  }
+
+  const clusters = [...new Set(rows.map((r) => r.cluster).filter(Boolean))].sort();
+  return { rows, clusters, count: rows.length };
+}
+
+// ---------------------------------------------------------------- /api/keyword_gaps
+async function handleKeywordGaps(env, url) {
+  const property = url.searchParams.get("property") || "all";
+  const limit = parseInt(url.searchParams.get("limit") || "200", 10);
+
+  let rows = [];
+  try {
+    rows = await sbFetchAll(env, `/keyword_gaps?select=*&limit=${limit}`);
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.includes("keyword_gaps") && (msg.includes("does not exist") || msg.includes("Not found"))) {
+      return { rows: [] };
+    }
+    throw e;
+  }
+
+  if (property !== "all") rows = rows.filter((r) => r.property === property);
+  rows.sort((a, b) => (b.rank_signals || 0) - (a.rank_signals || 0));
+  return { rows: rows.slice(0, limit) };
+}
+
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
@@ -1850,6 +1937,8 @@ export default {
         else if (route === "content_decay") result = await handleContentDecay(env, url);
         else if (route === "content_links") result = await handleContentLinks(env, url);
         else if (route === "content_authors") result = await handleContentAuthors(env, url);
+        else if (route === "keywords") result = await handleKeywords(env, request, url);
+        else if (route === "keyword_gaps") result = await handleKeywordGaps(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
