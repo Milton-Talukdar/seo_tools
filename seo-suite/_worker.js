@@ -1965,7 +1965,7 @@ async function handleKeywordDiscover(env, url) {
     payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
   } else {
     endpoint = "/dataforseo_labs/google/keyword_ideas/live";
-    payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
+    payload = [{ keywords: [seed], location_code: locationCode, language_code: "en", limit }];
   }
 
   const result = await dfsPost(env, endpoint, payload);
@@ -2040,10 +2040,13 @@ async function handleKeywordOverview(env, url) {
 
   const result = await dfsPost(env, endpoint, payload);
   let items = [];
-  for (const r of result) {
-    for (const item of r.items || []) {
-      for (const kw of item.keywords || []) {
-        items.push(normalizeDfsItem({ ...kw, keyword: kw.keyword || keyword }));
+  // keywords_data returns a nested task structure: result -> tasks -> result -> items -> keywords
+  for (const task of result || []) {
+    for (const sub of task.tasks || []) {
+      for (const item of sub.result || []) {
+        for (const kw of item.keywords || []) {
+          items.push(normalizeDfsItem({ ...kw, keyword: kw.keyword || keyword }));
+        }
       }
     }
   }
