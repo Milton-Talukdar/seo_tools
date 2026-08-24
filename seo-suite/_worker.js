@@ -79,6 +79,7 @@ async function dfsPost(env, endpoint, payload) {
   if (!env.DATAFORSEO_LOGIN || !env.DATAFORSEO_PASSWORD) {
     throw new Error("DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD not configured");
   }
+  // Credentials are set in Cloudflare Pages Settings > Environment variables.
   const auth = btoa(`${env.DATAFORSEO_LOGIN}:${env.DATAFORSEO_PASSWORD}`);
   const res = await fetch(`https://api.dataforseo.com/v3${endpoint}`, {
     method: "POST",
