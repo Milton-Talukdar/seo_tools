@@ -39,7 +39,10 @@
           { id: 'content-inventory', label: 'Inventory', panel: 'content-inventory' },
           { id: 'content-pipeline', label: 'Pipeline', panel: 'content-pipeline' },
           { id: 'content-clusters', label: 'Topic Clusters', panel: 'content-clusters' },
-          { id: 'content-performance', label: 'Performance', panel: 'content-performance' }
+          { id: 'content-performance', label: 'Performance', panel: 'content-performance' },
+          { id: 'content-decay', label: 'Decay', panel: 'content-decay' },
+          { id: 'content-links', label: 'Internal Links', panel: 'content-links' },
+          { id: 'content-authors', label: 'Authors', panel: 'content-authors' }
         ] }
       ]
     },
@@ -2314,8 +2317,9 @@
         const owner = r.owner ? '<div class="cp-owner">👤 ' + esc(r.owner) + '</div>' : '';
         const kw = r.target_keyword ? '<div class="cp-kw">🎯 ' + esc(r.target_keyword) + '</div>' : '';
         const cluster = r.cluster ? '<div class="cp-cluster">🏷️ ' + esc(r.cluster) + '</div>' : '';
-        return '<div class="cp-card" data-id="' + esc(r.id) + '" data-property="' + esc(r.property || 'vantagecircle') + '" data-stage="' + esc(r.stage) + '" draggable="true">' +
-          '<div class="cp-title">' + esc(r.title) + '</div>' +
+        const briefIcon = r.brief_goal || r.brief_outline ? '<span class="cp-brief-icon" title="Brief attached">📝</span>' : '';
+        return '<div class="cp-card" data-id="' + esc(r.id) + '" data-property="' + esc(r.property || 'vantagecircle') + '" data-stage="' + esc(r.stage) + '" data-due="' + esc(r.due_date || '') + '" draggable="true">' +
+          '<div class="cp-title">' + esc(r.title) + ' ' + briefIcon + '</div>' +
           (r.url ? '<a href="' + esc(r.url) + '" target="_blank" class="sub" style="font-size:11px">' + esc(r.url.replace(/^https?:\/\//, '').slice(0, 40)) + '</a>' : '') +
           '<div class="cp-meta">' + owner + due + kw + cluster + '</div>' +
           '</div>';
@@ -2329,6 +2333,20 @@
           '</div>';
       }).join('');
 
+      function monthKey(d) { return d ? d.slice(0, 7) : '(no date)'; }
+      const calendarRows = rows.filter(function (r) { return r.property === currentProp; }).sort(function (a, b) { return (a.due_date || '').localeCompare(b.due_date || ''); });
+      const byMonth = {};
+      calendarRows.forEach(function (r) {
+        const m = monthKey(r.due_date);
+        if (!byMonth[m]) byMonth[m] = [];
+        byMonth[m].push(r);
+      });
+      const months = Object.keys(byMonth).sort();
+      const calendarHtml = '<div class="cp-calendar">' + months.map(function (m) {
+        return '<div class="cp-month"><div class="cp-month-head">' + esc(m) + '</div>' +
+          '<div class="cp-month-cards">' + byMonth[m].map(cardHtml).join('') + '</div></div>';
+      }).join('') + '</div>';
+
       const formHtml = '<details class="cp-add no-print"><summary>Add pipeline item</summary>' +
         '<form class="cp-form">' +
         '<input type="text" name="title" placeholder="Title *" required>' +
@@ -2339,6 +2357,11 @@
         '<input type="date" name="due_date">' +
         '<input type="text" name="target_keyword" placeholder="Target keyword">' +
         '<input type="text" name="cluster" placeholder="Cluster">' +
+        '<input type="text" name="brief_goal" placeholder="Brief goal">' +
+        '<input type="text" name="brief_keywords" placeholder="Brief keywords (comma separated)">' +
+        '<input type="text" name="brief_competitors" placeholder="Competitor URLs (comma separated)">' +
+        '<input type="number" name="brief_word_count" placeholder="Target word count">' +
+        '<textarea name="brief_outline" placeholder="Brief outline" rows="3"></textarea>' +
         '<textarea name="notes" placeholder="Notes" rows="2"></textarea>' +
         '<button type="submit">Add</button>' +
         '</form></details>';
@@ -2346,10 +2369,13 @@
       const filterHtml = '<div class="table-tools no-print">' +
         '<select class="cp-property"><option value="all">All properties</option>' + propOpts + '</select>' +
         '<input class="cp-search" type="search" placeholder="Search pipeline…">' +
+        '<button class="cp-view-board active" type="button">Board</button>' +
+        '<button class="cp-view-calendar" type="button">Calendar</button>' +
         '<span class="cp-total sub">' + rows.length + ' items</span></div>';
 
       el.innerHTML = '<h2>Content Pipeline</h2>' + filterHtml + formHtml +
-        '<div class="card cp-board">' + columnsHtml + '</div>';
+        '<div class="cp-view" data-view="board"><div class="card cp-board">' + columnsHtml + '</div></div>' +
+        '<div class="cp-view" data-view="calendar" style="display:none">' + calendarHtml + '</div>';
       initContentPipelineInteractions();
     } catch (e) {
       el.innerHTML = errorCard(e.message);
@@ -2362,7 +2388,19 @@
     const propSel = wrap.querySelector('.cp-property');
     const search = wrap.querySelector('.cp-search');
     const form = wrap.querySelector('.cp-form');
+    const boardBtn = wrap.querySelector('.cp-view-board');
+    const calBtn = wrap.querySelector('.cp-view-calendar');
+    const views = Array.prototype.slice.call(wrap.querySelectorAll('.cp-view'));
     const cols = Array.prototype.slice.call(wrap.querySelectorAll('.cp-col'));
+
+    function setView(name) {
+      views.forEach(function (v) { v.style.display = v.getAttribute('data-view') === name ? '' : 'none'; });
+      if (boardBtn) boardBtn.classList.toggle('active', name === 'board');
+      if (calBtn) calBtn.classList.toggle('active', name === 'calendar');
+    }
+
+    if (boardBtn) boardBtn.addEventListener('click', function () { setView('board'); });
+    if (calBtn) calBtn.addEventListener('click', function () { setView('calendar'); });
 
     function filter() {
       const p = propSel ? propSel.value : 'all';
@@ -2378,6 +2416,13 @@
         });
         col.querySelector('.cp-count').textContent = shown;
       });
+      // also filter calendar cards
+      const calCards = Array.prototype.slice.call(wrap.querySelectorAll('.cp-calendar .cp-card'));
+      calCards.forEach(function (card) {
+        const ok = (p === 'all' || card.getAttribute('data-property') === p) &&
+                   (!q || card.textContent.toLowerCase().indexOf(q) > -1);
+        card.style.display = ok ? '' : 'none';
+      });
     }
 
     if (propSel) propSel.addEventListener('change', filter);
@@ -2388,10 +2433,12 @@
         e.preventDefault();
         const fd = new FormData(form);
         const body = {};
-        ['title', 'property', 'content_type', 'stage', 'owner', 'due_date', 'target_keyword', 'cluster', 'notes'].forEach(function (k) {
+        ['title', 'property', 'content_type', 'stage', 'owner', 'due_date', 'target_keyword', 'cluster', 'notes', 'brief_goal', 'brief_outline', 'brief_keywords', 'brief_competitors'].forEach(function (k) {
           const v = fd.get(k);
           if (v) body[k] = v;
         });
+        const wc = fd.get('brief_word_count');
+        if (wc) body.brief_word_count = parseInt(wc, 10);
         if (!body.property) body.property = 'vantagecircle';
         try {
           await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -2505,9 +2552,18 @@
         '<div class="kpi"><div class="num">' + fmtNum(summary.total || rows.length) + '</div><div class="label">Pages</div></div>' +
         '<div class="kpi"><div class="num">' + fmtNum(summary.total_clicks || 0) + '</div><div class="label">Clicks (28d)</div></div>' +
         '<div class="kpi"><div class="num">' + fmtNum(summary.total_impressions || 0) + '</div><div class="label">Impressions</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.total_backlinks || 0) + '</div><div class="label">Backlinks</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.total_refdomains || 0) + '</div><div class="label">Ref domains</div></div>' +
         '<div class="kpi"><div class="num">' + (summary.avg_position || 0) + '</div><div class="label">Avg position</div></div>' +
         '<div class="kpi"><div class="num">' + fmtNum(summary.with_traffic || 0) + '</div><div class="label">With traffic</div></div>' +
         '</div>';
+
+      function trendBadge(val) {
+        if (val === undefined || val === null) return '';
+        const cls = val > 0 ? 'up' : (val < 0 ? 'down' : 'flat');
+        const arrow = val > 0 ? '↑' : (val < 0 ? '↓' : '—');
+        return '<span class="cpf-trend ' + cls + '">' + arrow + ' ' + Math.abs(val) + '%</span>';
+      }
 
       const tableRows = rows.map(function (r) {
         const actionClass = { monitor: '', optimize: 'amber', improve: 'you', expand: 'you', audit: 'rose' }[r.action] || '';
@@ -2515,13 +2571,16 @@
         const rank = r.rank_position ? '<span class="pos-chip ' + (r.rank_position <= 10 ? 'up' : (r.rank_position <= 30 ? 'flat' : 'down')) + '">' + esc(String(r.rank_position)) + '</span>' : '—';
         const gscPos = r.gsc_position ? esc(String(Math.round(r.gsc_position * 10) / 10)) : '—';
         const ctr = r.ctr ? (r.ctr * 100).toFixed(2) + '%' : '—';
+        const t = r.trends || {};
         const search = [r.title, r.url, r.cluster, r.content_type, r.action, r.reason].filter(Boolean).join(' ').toLowerCase();
-        return '<tr data-search="' + esc(search) + '" data-property="' + esc(r.property) + '" data-type="' + esc(r.content_type) + '" data-cluster="' + esc(r.cluster || '') + '" data-clicks="' + (r.clicks || 0) + '" data-impressions="' + (r.impressions || 0) + '">' +
+        return '<tr data-search="' + esc(search) + '" data-property="' + esc(r.property) + '" data-type="' + esc(r.content_type) + '" data-cluster="' + esc(r.cluster || '') + '" data-clicks="' + (r.clicks || 0) + '" data-impressions="' + (r.impressions || 0) + '" data-backlinks="' + (r.backlinks || 0) + '" data-refdomains="' + (r.refdomains || 0) + '" data-trend7="' + (t.clicks_7d || 0) + '" data-trend28="' + (t.clicks_28d || 0) + '" data-trend90="' + (t.clicks_90d || 0) + '">' +
           '<td><a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.title || r.slug) + '</a><br><span class="sub">' + esc(r.url.replace(/^https?:\/\//, '').replace(/\/$/, '').slice(0, 50)) + '</span></td>' +
           '<td>' + esc(r.content_type) + '</td>' +
           '<td>' + cluster + '</td>' +
-          '<td class="num">' + fmtNum(r.clicks || 0) + '</td>' +
+          '<td class="num">' + fmtNum(r.clicks || 0) + '<br>' + trendBadge(t.clicks_28d) + '</td>' +
           '<td class="num">' + fmtNum(r.impressions || 0) + '</td>' +
+          '<td class="num">' + fmtNum(r.backlinks || 0) + '</td>' +
+          '<td class="num">' + fmtNum(r.refdomains || 0) + '</td>' +
           '<td class="num">' + ctr + '</td>' +
           '<td class="num">' + gscPos + '</td>' +
           '<td class="num">' + rank + '</td>' +
@@ -2530,10 +2589,13 @@
           '</tr>';
       }).join('');
 
+      const trendDays = data.trend_days || {};
+      const trendNote = 'Trends vs ' + (trendDays.prev28 ? trendDays.prev28 : '—') + ' (28d)';
       const filterHtml = '<div class="table-tools no-print cpf-tools">' +
         '<select class="cpf-property"><option value="all">All properties</option>' + propOpts + '</select>' +
         '<select class="cpf-type"><option value="all">All types</option>' + typeOpts + '</select>' +
         '<select class="cpf-cluster"><option value="">All clusters</option>' + clusterOpts + '</select>' +
+        '<select class="cpf-trend-window"><option value="28">28d trend</option><option value="7">7d trend</option><option value="90">90d trend</option></select>' +
         '<input class="cpf-search" type="search" placeholder="Search title, URL, keyword…">' +
         '<button class="cpf-export" type="button">Export CSV</button>' +
         '<span class="cpf-count sub">' + fmtNum(rows.length) + ' pages</span></div>';
@@ -2545,6 +2607,8 @@
         '<th class="sortable" data-sort="cluster">Cluster <span class="arrow"></span></th>' +
         '<th class="sortable" data-sort="clicks">Clicks <span class="arrow"></span></th>' +
         '<th class="sortable" data-sort="impressions">Impr. <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="backlinks">BL <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="refdomains">RD <span class="arrow"></span></th>' +
         '<th class="sortable" data-sort="ctr">CTR <span class="arrow"></span></th>' +
         '<th class="sortable" data-sort="gsc_position">GSC pos <span class="arrow"></span></th>' +
         '<th class="sortable" data-sort="rank_position">Rank <span class="arrow"></span></th>' +
@@ -2552,8 +2616,8 @@
         '<th>Action</th>' +
         '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
 
-      const note = (data.latest_gsc_day || data.latest_rank_day) ?
-        '<div class="sub" style="margin-top:8px">Latest data: GSC ' + esc(data.latest_gsc_day || '—') + ' | Rank ' + esc(data.latest_rank_day || '—') + '</div>' : '';
+      const note = (data.latest_gsc_day || data.latest_rank_day || data.latest_backlink_day) ?
+        '<div class="sub" style="margin-top:8px">Latest data: GSC ' + esc(data.latest_gsc_day || '—') + ' | Rank ' + esc(data.latest_rank_day || '—') + ' | Backlinks ' + esc(data.latest_backlink_day || '—') + ' · ' + esc(trendNote) + '</div>' : '';
 
       el.innerHTML = '<h2>Content Performance</h2>' + kpiHtml + tableHtml + note;
       initContentPerformanceInteractions();
@@ -2569,11 +2633,28 @@
     const propSel = wrap.querySelector('.cpf-property');
     const typeSel = wrap.querySelector('.cpf-type');
     const clusterSel = wrap.querySelector('.cpf-cluster');
+    const trendSel = wrap.querySelector('.cpf-trend-window');
     const tbody = wrap.querySelector('tbody');
     const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
     const count = wrap.querySelector('.cpf-count');
     const ths = wrap.querySelectorAll('th.sortable');
     let sortKey = 'clicks', sortDir = -1;
+    let trendWindow = '28';
+
+    function trendForRow(r) {
+      const v = parseFloat(r.getAttribute('data-trend' + trendWindow) || '0');
+      return isNaN(v) ? 0 : v;
+    }
+
+    function renderTrend(r) {
+      const cell = r.cells[3];
+      const val = trendForRow(r);
+      const cls = val > 0 ? 'up' : (val < 0 ? 'down' : 'flat');
+      const arrow = val > 0 ? '↑' : (val < 0 ? '↓' : '—');
+      const badge = '<span class="cpf-trend ' + cls + '">' + arrow + ' ' + Math.abs(val) + '%</span>';
+      const num = cell ? cell.innerHTML.split('<br>')[0] : '';
+      if (cell) cell.innerHTML = num + '<br>' + badge;
+    }
 
     function applyFilter() {
       const q = search ? search.value.toLowerCase() : '';
@@ -2597,9 +2678,11 @@
       if (k === 'title') return r.cells[0].textContent.toLowerCase();
       if (k === 'type') return r.getAttribute('data-type');
       if (k === 'cluster') return r.getAttribute('data-cluster');
-      if (k === 'clicks' || k === 'impressions') return parseInt(r.getAttribute('data-' + k) || '0', 10);
+      if (k === 'clicks' || k === 'impressions' || k === 'backlinks' || k === 'refdomains') return parseInt(r.getAttribute('data-' + k) || '0', 10);
+      if (k === 'trend') return trendForRow(r);
       if (k === 'ctr' || k === 'gsc_position' || k === 'rank_position') {
-        const txt = r.cells[k === 'ctr' ? 5 : (k === 'gsc_position' ? 6 : 7)].textContent.replace('%', '').trim();
+        const idx = k === 'ctr' ? 7 : (k === 'gsc_position' ? 8 : 9);
+        const txt = r.cells[idx].textContent.replace('%', '').trim();
         return txt === '—' ? 0 : parseFloat(txt);
       }
       return '';
@@ -2607,7 +2690,7 @@
 
     function cmp(a, b) {
       const va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
-      if (sortKey === 'clicks' || sortKey === 'impressions' || sortKey === 'ctr' || sortKey === 'gsc_position' || sortKey === 'rank_position') {
+      if (sortKey === 'clicks' || sortKey === 'impressions' || sortKey === 'backlinks' || sortKey === 'refdomains' || sortKey === 'ctr' || sortKey === 'gsc_position' || sortKey === 'rank_position' || sortKey === 'trend') {
         return (va - vb) * sortDir;
       }
       if (va < vb) return -sortDir;
@@ -2633,6 +2716,13 @@
       });
     });
 
+    if (trendSel) {
+      trendSel.addEventListener('change', function () {
+        trendWindow = trendSel.value;
+        rows.forEach(renderTrend);
+      });
+    }
+
     [search, propSel, typeSel, clusterSel].forEach(function (el) {
       if (el) el.addEventListener('input', applyFilter);
     });
@@ -2641,7 +2731,7 @@
     if (exportBtn) exportBtn.addEventListener('click', function () {
       const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
       const visible = rows.filter(function (r) { return r.style.display !== 'none'; });
-      const csv = ['title,url,type,cluster,clicks,impressions,ctr,gsc_position,rank_position,rank_keyword,action,reason'].concat(visible.map(function (r) {
+      const csv = ['title,url,type,cluster,clicks,impressions,backlinks,refdomains,ctr,gsc_position,rank_position,rank_keyword,action,reason'].concat(visible.map(function (r) {
         return [
           q(r.cells[0].querySelector('a') ? r.cells[0].querySelector('a').textContent : r.cells[0].textContent),
           q(r.cells[0].querySelector('a') ? r.cells[0].querySelector('a').href : ''),
@@ -2649,12 +2739,14 @@
           q(r.cells[2].textContent),
           r.getAttribute('data-clicks'),
           r.getAttribute('data-impressions'),
-          q(r.cells[5].textContent),
-          q(r.cells[6].textContent),
+          r.getAttribute('data-backlinks'),
+          r.getAttribute('data-refdomains'),
           q(r.cells[7].textContent),
           q(r.cells[8].textContent),
-          q(r.cells[9].querySelector('.chip') ? r.cells[9].querySelector('.chip').textContent : ''),
-          q(r.cells[9].querySelector('.sub') ? r.cells[9].querySelector('.sub').textContent : '')
+          q(r.cells[9].textContent),
+          q(r.cells[10].textContent),
+          q(r.cells[11].querySelector('.chip') ? r.cells[11].querySelector('.chip').textContent : ''),
+          q(r.cells[11].querySelector('.sub') ? r.cells[11].querySelector('.sub').textContent : '')
         ].join(',');
       })).join('\n');
       const a = document.createElement('a');
@@ -2664,6 +2756,390 @@
       URL.revokeObjectURL(a.href);
     });
 
+    applySort();
+    applyFilter();
+  }
+
+  // ---------------------------------------------------------------- content decay
+  async function loadContentDecay() {
+    const el = document.getElementById('panel-content-decay');
+    try {
+      const data = await api('content_decay');
+      const rows = data.rows || [];
+      const summary = data.summary || {};
+      const props = ['vantagecircle', 'vantagefit'];
+      const risks = ['critical', 'high', 'medium', 'low'];
+
+      const propOpts = props.map(function (p) {
+        return '<option value="' + esc(p) + '">' + esc(PROPERTIES[p].label) + '</option>';
+      }).join('');
+      const riskOpts = risks.map(function (r) {
+        return '<option value="' + esc(r) + '">' + esc(r) + '</option>';
+      }).join('');
+
+      const kpiHtml = '<div class="kpis">' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.critical || 0) + '</div><div class="label">Critical</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.high || 0) + '</div><div class="label">High</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.medium || 0) + '</div><div class="label">Medium</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.low || 0) + '</div><div class="label">Low</div></div>' +
+        '</div>';
+
+      const tableRows = rows.map(function (r) {
+        const riskClass = { critical: 'rose', high: 'amber', medium: 'none', low: '' }[r.risk] || '';
+        const actionClass = { refresh: 'rose', update: 'amber', optimize: 'amber', improve: 'you', cluster: '', monitor: '' }[r.action] || '';
+        const updated = r.days_since_updated != null ? '<span class="sub">' + r.days_since_updated + 'd ago</span>' : '—';
+        const cluster = r.cluster ? '<span class="chip">' + esc(r.cluster) + '</span>' : '<span class="sub">—</span>';
+        const rank = r.rank_position ? '<span class="pos-chip ' + (r.rank_position <= 10 ? 'up' : (r.rank_position <= 30 ? 'flat' : 'down')) + '">' + esc(String(r.rank_position)) + '</span>' : '—';
+        const search = [r.title, r.url, r.cluster, r.content_type, r.risk, r.action, r.reason].filter(Boolean).join(' ').toLowerCase();
+        return '<tr data-search="' + esc(search) + '" data-property="' + esc(r.property) + '" data-risk="' + esc(r.risk) + '" data-score="' + (r.score || 0) + '" data-clicks="' + (r.clicks || 0) + '" data-impressions="' + (r.impressions || 0) + '">' +
+          '<td><a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.title || r.slug) + '</a><br><span class="sub">' + esc(r.url.replace(/^https?:\/\//, '').replace(/\/$/, '').slice(0, 45)) + '</span></td>' +
+          '<td>' + esc(r.content_type) + '</td>' +
+          '<td>' + cluster + '</td>' +
+          '<td class="num">' + fmtNum(r.clicks || 0) + '</td>' +
+          '<td class="num">' + fmtNum(r.impressions || 0) + '</td>' +
+          '<td class="num">' + rank + '</td>' +
+          '<td>' + updated + '</td>' +
+          '<td><span class="chip ' + riskClass + '">' + esc(r.risk) + '</span></td>' +
+          '<td><span class="chip ' + actionClass + '">' + esc(r.action) + '</span> <span class="sub">' + esc(r.reason) + '</span></td>' +
+          '</tr>';
+      }).join('');
+
+      const filterHtml = '<div class="table-tools no-print cd-tools">' +
+        '<select class="cd-property"><option value="all">All properties</option>' + propOpts + '</select>' +
+        '<select class="cd-risk"><option value="all">All risks</option>' + riskOpts + '</select>' +
+        '<input class="cd-search" type="search" placeholder="Search decay queue…">' +
+        '<button class="cd-export" type="button">Export CSV</button>' +
+        '<span class="cd-count sub">' + fmtNum(rows.length) + ' candidates</span></div>';
+
+      const tableHtml = '<div class="card">' + filterHtml +
+        '<table class="cd-table"><thead><tr>' +
+        '<th class="sortable" data-sort="title">Title <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="type">Type <span class="arrow"></span></th>' +
+        '<th>Cluster</th>' +
+        '<th class="sortable" data-sort="clicks">Clicks <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="impressions">Impr. <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="rank">Rank <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="updated">Updated <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="risk">Risk <span class="arrow"></span></th>' +
+        '<th>Action</th>' +
+        '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+
+      el.innerHTML = '<h2>Content Decay / Refresh Queue</h2>' + kpiHtml + tableHtml;
+      initContentDecayInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  function initContentDecayInteractions() {
+    const wrap = document.getElementById('panel-content-decay');
+    if (!wrap) return;
+    const search = wrap.querySelector('.cd-search');
+    const propSel = wrap.querySelector('.cd-property');
+    const riskSel = wrap.querySelector('.cd-risk');
+    const tbody = wrap.querySelector('tbody');
+    const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    const count = wrap.querySelector('.cd-count');
+    const ths = wrap.querySelectorAll('th.sortable');
+    let sortKey = 'score', sortDir = -1;
+
+    function applyFilter() {
+      const q = search ? search.value.toLowerCase() : '';
+      const p = propSel ? propSel.value : 'all';
+      const risk = riskSel ? riskSel.value : 'all';
+      let n = 0;
+      rows.forEach(function (r) {
+        let ok = true;
+        if (q && r.getAttribute('data-search').indexOf(q) === -1) ok = false;
+        if (ok && p !== 'all' && r.getAttribute('data-property') !== p) ok = false;
+        if (ok && risk !== 'all' && r.getAttribute('data-risk') !== risk) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' candidates';
+    }
+
+    function keyVal(r, k) {
+      if (k === 'title') return r.cells[0].textContent.toLowerCase();
+      if (k === 'type') return r.cells[1].textContent.toLowerCase();
+      if (k === 'clicks' || k === 'impressions' || k === 'score') return parseInt(r.getAttribute('data-' + k) || '0', 10);
+      if (k === 'rank') {
+        const txt = r.cells[5].textContent.trim();
+        return txt === '—' ? 999 : parseFloat(txt);
+      }
+      if (k === 'updated') {
+        const txt = r.cells[6].textContent.replace(/\D/g, '').trim();
+        return txt ? parseInt(txt, 10) : 0;
+      }
+      if (k === 'risk') {
+        const order = { critical: 4, high: 3, medium: 2, low: 1, healthy: 0 };
+        return order[r.getAttribute('data-risk')] || 0;
+      }
+      return '';
+    }
+
+    function cmp(a, b) {
+      const va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+      if (sortKey === 'clicks' || sortKey === 'impressions' || sortKey === 'score' || sortKey === 'rank' || sortKey === 'updated' || sortKey === 'risk') {
+        return (va - vb) * sortDir;
+      }
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    }
+
+    function applySort() {
+      rows.sort(cmp);
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      ths.forEach(function (th) {
+        const arr = th.querySelector('.arrow');
+        if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+      });
+    }
+
+    ths.forEach(function (th) {
+      th.addEventListener('click', function () {
+        const k = th.getAttribute('data-sort');
+        if (k === sortKey) { sortDir = -sortDir; }
+        else { sortKey = k; sortDir = (k === 'title' || k === 'type') ? 1 : -1; }
+        applySort();
+      });
+    });
+
+    [search, propSel, riskSel].forEach(function (el) {
+      if (el) el.addEventListener('input', applyFilter);
+    });
+
+    const exportBtn = wrap.querySelector('.cd-export');
+    if (exportBtn) exportBtn.addEventListener('click', function () {
+      const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+      const visible = rows.filter(function (r) { return r.style.display !== 'none'; });
+      const csv = ['title,url,type,cluster,clicks,impressions,rank_position,days_since_updated,risk,action,reason'].concat(visible.map(function (r) {
+        return [
+          q(r.cells[0].querySelector('a') ? r.cells[0].querySelector('a').textContent : r.cells[0].textContent),
+          q(r.cells[0].querySelector('a') ? r.cells[0].querySelector('a').href : ''),
+          q(r.cells[1].textContent),
+          q(r.cells[2].textContent),
+          r.getAttribute('data-clicks') || '0',
+          r.getAttribute('data-impressions') || '0',
+          q(r.cells[5].textContent),
+          q(r.cells[6].textContent),
+          q(r.getAttribute('data-risk')),
+          q(r.cells[8].querySelector('.chip') ? r.cells[8].querySelector('.chip').textContent : ''),
+          q(r.cells[8].querySelector('.sub') ? r.cells[8].querySelector('.sub').textContent : '')
+        ].join(',');
+      })).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = 'content-decay-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    applySort();
+    applyFilter();
+  }
+
+  // ---------------------------------------------------------------- content links
+  async function loadContentLinks() {
+    const el = document.getElementById('panel-content-links');
+    try {
+      const data = await api('content_links');
+      const suggestions = data.suggestions || [];
+      const props = ['vantagecircle', 'vantagefit'];
+      const clusters = [''].concat((data.clusters || []).sort());
+
+      const propOpts = props.map(function (p) {
+        return '<option value="' + esc(p) + '">' + esc(PROPERTIES[p].label) + '</option>';
+      }).join('');
+      const clusterOpts = clusters.map(function (c) {
+        return '<option value="' + esc(c) + '">' + (c ? esc(c) : 'All clusters') + '</option>';
+      }).join('');
+
+      const kpiHtml = '<div class="kpis">' +
+        '<div class="kpi"><div class="num">' + fmtNum(suggestions.length) + '</div><div class="label">Pages with link gaps</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(suggestions.reduce(function (s, r) { return s + (r.internal_links || 0); }, 0)) + '</div><div class="label">Current internal links</div></div>' +
+        '</div>';
+
+      const tableRows = suggestions.map(function (r) {
+        const targets = r.targets.map(function (t) {
+          return '<a href="' + esc(t.url) + '" target="_blank" rel="noopener" title="score ' + t.score + '">' + esc(t.title || t.url) + '</a>';
+        }).join('<br>');
+        const search = [r.source_title, r.source_url, r.cluster].filter(Boolean).join(' ').toLowerCase();
+        return '<tr data-search="' + esc(search) + '" data-property="' + esc(r.source_property) + '" data-cluster="' + esc(r.cluster || '') + '">' +
+          '<td><a href="' + esc(r.source_url) + '" target="_blank" rel="noopener">' + esc(r.source_title || r.source_url) + '</a></td>' +
+          '<td>' + esc(r.cluster || '—') + '</td>' +
+          '<td class="num">' + fmtNum(r.internal_links || 0) + '</td>' +
+          '<td>' + targets + '</td>' +
+          '</tr>';
+      }).join('');
+
+      const filterHtml = '<div class="table-tools no-print cl-tools">' +
+        '<select class="cl-property"><option value="all">All properties</option>' + propOpts + '</select>' +
+        '<select class="cl-cluster"><option value="">All clusters</option>' + clusterOpts + '</select>' +
+        '<input class="cl-search" type="search" placeholder="Search link gaps…">' +
+        '<span class="cl-count sub">' + fmtNum(suggestions.length) + ' suggestions</span></div>';
+
+      const tableHtml = '<div class="card">' + filterHtml +
+        '<table class="cl-table"><thead><tr>' +
+        '<th>Source page</th>' +
+        '<th>Cluster</th>' +
+        '<th>Current internal links</th>' +
+        '<th>Suggested links</th>' +
+        '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+
+      el.innerHTML = '<h2>Internal Linking Suggestions</h2>' + kpiHtml + tableHtml;
+      initContentLinksInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  function initContentLinksInteractions() {
+    const wrap = document.getElementById('panel-content-links');
+    if (!wrap) return;
+    const search = wrap.querySelector('.cl-search');
+    const propSel = wrap.querySelector('.cl-property');
+    const clusterSel = wrap.querySelector('.cl-cluster');
+    const tbody = wrap.querySelector('tbody');
+    const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    const count = wrap.querySelector('.cl-count');
+
+    function applyFilter() {
+      const q = search ? search.value.toLowerCase() : '';
+      const p = propSel ? propSel.value : 'all';
+      const c = clusterSel ? clusterSel.value : '';
+      let n = 0;
+      rows.forEach(function (r) {
+        let ok = true;
+        if (q && r.getAttribute('data-search').indexOf(q) === -1) ok = false;
+        if (ok && p !== 'all' && r.getAttribute('data-property') !== p) ok = false;
+        if (ok && c && r.getAttribute('data-cluster') !== c) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' suggestions';
+    }
+
+    [search, propSel, clusterSel].forEach(function (el) {
+      if (el) el.addEventListener('input', applyFilter);
+    });
+    applyFilter();
+  }
+
+  // ---------------------------------------------------------------- content authors
+  async function loadContentAuthors() {
+    const el = document.getElementById('panel-content-authors');
+    try {
+      const data = await api('content_authors');
+      const authors = data.authors || [];
+      const props = ['vantagecircle', 'vantagefit'];
+
+      const propOpts = props.map(function (p) {
+        return '<option value="' + esc(p) + '">' + esc(PROPERTIES[p].label) + '</option>';
+      }).join('');
+
+      const kpiHtml = '<div class="kpis">' +
+        '<div class="kpi"><div class="num">' + fmtNum(authors.length) + '</div><div class="label">Authors</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(authors.reduce(function (s, a) { return s + a.pages; }, 0)) + '</div><div class="label">Pages</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(authors.reduce(function (s, a) { return s + a.clicks; }, 0)) + '</div><div class="label">Total clicks</div></div>' +
+        '</div>';
+
+      const tableRows = authors.map(function (a) {
+        return '<tr data-property="all">' +
+          '<td><b>' + esc(a.name) + '</b></td>' +
+          '<td class="num">' + fmtNum(a.pages) + '</td>' +
+          '<td class="num">' + fmtNum(a.clicks) + '</td>' +
+          '<td class="num">' + fmtNum(a.impressions) + '</td>' +
+          '<td class="num">' + fmtNum(a.top10) + '</td>' +
+          '<td class="num">' + (a.avg_position || '—') + '</td>' +
+          '<td class="num">' + fmtNum(a.backlinks) + '</td>' +
+          '<td class="num">' + fmtNum(a.refdomains) + '</td>' +
+          '</tr>';
+      }).join('');
+
+      const filterHtml = '<div class="table-tools no-print ca-tools">' +
+        '<select class="ca-property"><option value="all">All properties</option>' + propOpts + '</select>' +
+        '<input class="ca-search" type="search" placeholder="Search authors…">' +
+        '<span class="ca-count sub">' + fmtNum(authors.length) + ' authors</span></div>';
+
+      const tableHtml = '<div class="card">' + filterHtml +
+        '<table class="ca-table"><thead><tr>' +
+        '<th class="sortable" data-sort="name">Author <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="pages">Pages <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="clicks">Clicks <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="impressions">Impr. <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="top10">Top 10 <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="avg_position">Avg pos <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="backlinks">Backlinks <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="refdomains">Ref domains <span class="arrow"></span></th>' +
+        '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+
+      const note = (data.latest_gsc_day || data.latest_rank_day || data.latest_backlink_day) ?
+        '<div class="sub" style="margin-top:8px">Latest data: GSC ' + esc(data.latest_gsc_day || '—') + ' | Rank ' + esc(data.latest_rank_day || '—') + ' | Backlinks ' + esc(data.latest_backlink_day || '—') + '</div>' : '';
+
+      el.innerHTML = '<h2>Author Performance</h2>' + kpiHtml + tableHtml + note;
+      initContentAuthorsInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  function initContentAuthorsInteractions() {
+    const wrap = document.getElementById('panel-content-authors');
+    if (!wrap) return;
+    const search = wrap.querySelector('.ca-search');
+    const tbody = wrap.querySelector('tbody');
+    const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    const count = wrap.querySelector('.ca-count');
+    const ths = wrap.querySelectorAll('th.sortable');
+    let sortKey = 'clicks', sortDir = -1;
+
+    function applyFilter() {
+      const q = search ? search.value.toLowerCase() : '';
+      let n = 0;
+      rows.forEach(function (r) {
+        const ok = !q || r.cells[0].textContent.toLowerCase().indexOf(q) !== -1;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' authors';
+    }
+
+    function keyVal(r, k) {
+      if (k === 'name') return r.cells[0].textContent.toLowerCase();
+      const map = { pages: 1, clicks: 2, impressions: 3, top10: 4, avg_position: 5, backlinks: 6, refdomains: 7 };
+      const txt = r.cells[map[k]].textContent.replace(/,/g, '').trim();
+      return txt === '—' ? 0 : parseFloat(txt);
+    }
+
+    function cmp(a, b) {
+      const va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+      if (sortKey !== 'name') return (va - vb) * sortDir;
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    }
+
+    function applySort() {
+      rows.sort(cmp);
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      ths.forEach(function (th) {
+        const arr = th.querySelector('.arrow');
+        if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+      });
+    }
+
+    ths.forEach(function (th) {
+      th.addEventListener('click', function () {
+        const k = th.getAttribute('data-sort');
+        if (k === sortKey) { sortDir = -sortDir; }
+        else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }
+        applySort();
+      });
+    });
+
+    if (search) search.addEventListener('input', applyFilter);
     applySort();
     applyFilter();
   }
@@ -2681,6 +3157,9 @@
       loadContentPipeline(),
       loadContentClusters(),
       loadContentPerformance(),
+      loadContentDecay(),
+      loadContentLinks(),
+      loadContentAuthors(),
       loadLLM(),
       loadLlmPrompts(),
       loadGscLlmQueries(),

@@ -631,6 +631,9 @@ const CACHE_TTL = {
   content_pipeline: 300,
   content_clusters: 1800,
   content_performance: 1800,
+  content_decay: 1800,
+  content_links: 1800,
+  content_authors: 1800,
 };
 
 function cacheEnabled(env) {
@@ -1154,7 +1157,7 @@ async function handleContentPipeline(env, request, url) {
     } catch (e) {
       return jsonError("Invalid JSON body", 400);
     }
-    const allowed = ["title", "property", "content_type", "stage", "owner", "due_date", "published_date", "target_keyword", "cluster", "notes", "url", "lang"];
+    const allowed = ["title", "property", "content_type", "stage", "owner", "due_date", "published_date", "target_keyword", "cluster", "notes", "url", "lang", "brief_goal", "brief_outline", "brief_word_count", "brief_keywords", "brief_competitors"];
     const row = {};
     for (const k of allowed) {
       if (body[k] !== undefined) row[k] = body[k];
@@ -1243,6 +1246,23 @@ async function handleContentClusters(env, url) {
   return { clusters: Object.values(clusterMap), inventory };
 }
 
+function nearestDay(days, target, maxWindow = 7) {
+  const targetTs = new Date(target).getTime();
+  let best = null, bestDiff = Infinity;
+  for (const d of days) {
+    const diff = Math.abs(new Date(d).getTime() - targetTs) / 86400000;
+    if (diff < bestDiff && diff <= maxWindow) {
+      best = d; bestDiff = diff;
+    }
+  }
+  return best;
+}
+
+function trendPct(current, previous) {
+  if (!previous || previous === 0) return current > 0 ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
 // ---------------------------------------------------------------- /api/content_performance
 async function handleContentPerformance(env, url) {
   const property = url.searchParams.get("property") || "all";
@@ -1262,18 +1282,29 @@ async function handleContentPerformance(env, url) {
     throw e;
   }
 
-  // 2. latest GSC page stats
+  // 2. GSC page stats (latest + history for trends)
   let gscStats = [];
   try {
-    gscStats = await sbFetchAll(env, "/gsc_page_stats?select=*&order=day.desc&limit=5000");
+    gscStats = await sbFetchAll(env, "/gsc_page_stats?select=*&order=day.desc&limit=10000");
   } catch (e) {
     gscStats = [];
   }
-  const latestGscDay = gscStats.length ? gscStats[0].day : null;
+  const gscDays = [...new Set(gscStats.map((r) => r.day))].sort((a, b) => b.localeCompare(a));
+  const latestGscDay = gscDays[0] || null;
+  const prev7 = latestGscDay ? nearestDay(gscDays, daysAgoISO(7)) : null;
+  const prev28 = latestGscDay ? nearestDay(gscDays, daysAgoISO(28)) : null;
+  const prev90 = latestGscDay ? nearestDay(gscDays, daysAgoISO(90)) : null;
+
   const gscByPage = {};
+  const gscByPage7 = {};
+  const gscByPage28 = {};
+  const gscByPage90 = {};
   gscStats.forEach((r) => {
-    if (r.day !== latestGscDay) return;
-    gscByPage[r.page] = { clicks: r.clicks || 0, impressions: r.impressions || 0, ctr: r.ctr || 0, position: r.position || 0 };
+    const base = { clicks: r.clicks || 0, impressions: r.impressions || 0, ctr: r.ctr || 0, position: r.position || 0 };
+    if (r.day === latestGscDay) gscByPage[r.page] = base;
+    if (r.day === prev7) gscByPage7[r.page] = base;
+    if (r.day === prev28) gscByPage28[r.page] = base;
+    if (r.day === prev90) gscByPage90[r.page] = base;
   });
 
   // 3. latest rank snapshots (best position per URL)
@@ -1305,6 +1336,25 @@ async function handleContentPerformance(env, url) {
     clusterKeywords[c.cluster] = { property: c.property, keywords: kws };
   });
 
+  // 5. latest backlink pages
+  let backlinkStats = [];
+  try {
+    backlinkStats = await sbFetchAll(env, "/backlink_pages?select=*&order=day.desc&limit=5000");
+  } catch (e) {
+    backlinkStats = [];
+  }
+  const latestBacklinkDay = backlinkStats.length ? backlinkStats[0].day : null;
+  const blByUrl = {};
+  backlinkStats.forEach((r) => {
+    if (r.day !== latestBacklinkDay) return;
+    blByUrl[r.url] = {
+      backlinks: r.backlinks || 0,
+      refdomains: r.refdomains || 0,
+      dofollow_backlinks: r.dofollow_backlinks || 0,
+      broken_backlinks: r.broken_backlinks || 0,
+    };
+  });
+
   function assignCluster(item) {
     const tags = [];
     try {
@@ -1321,8 +1371,21 @@ async function handleContentPerformance(env, url) {
 
   const rows = inventory.map((item) => {
     const gsc = gscByPage[item.url] || { clicks: 0, impressions: 0, ctr: 0, position: 0 };
+    const gsc7 = gscByPage7[item.url];
+    const gsc28 = gscByPage28[item.url];
+    const gsc90 = gscByPage90[item.url];
     const rank = rankByUrl[item.url] || { position: null, keyword: null };
     const cluster = assignCluster(item);
+    const bl = blByUrl[item.url] || { backlinks: 0, refdomains: 0, dofollow_backlinks: 0, broken_backlinks: 0 };
+
+    const trends = {
+      clicks_7d: trendPct(gsc.clicks, gsc7?.clicks),
+      clicks_28d: trendPct(gsc.clicks, gsc28?.clicks),
+      clicks_90d: trendPct(gsc.clicks, gsc90?.clicks),
+      impressions_7d: trendPct(gsc.impressions, gsc7?.impressions),
+      impressions_28d: trendPct(gsc.impressions, gsc28?.impressions),
+      impressions_90d: trendPct(gsc.impressions, gsc90?.impressions),
+    };
 
     let action = "monitor";
     let reason = "";
@@ -1349,6 +1412,11 @@ async function handleContentPerformance(env, url) {
       gsc_position: gsc.position,
       rank_position: rank.position,
       rank_keyword: rank.keyword,
+      backlinks: bl.backlinks,
+      refdomains: bl.refdomains,
+      dofollow_backlinks: bl.dofollow_backlinks,
+      broken_backlinks: bl.broken_backlinks,
+      trends,
       action,
       reason,
     };
@@ -1366,6 +1434,8 @@ async function handleContentPerformance(env, url) {
     total: filtered.length,
     total_clicks: filtered.reduce((s, r) => s + (r.clicks || 0), 0),
     total_impressions: filtered.reduce((s, r) => s + (r.impressions || 0), 0),
+    total_backlinks: filtered.reduce((s, r) => s + (r.backlinks || 0), 0),
+    total_refdomains: filtered.reduce((s, r) => s + (r.refdomains || 0), 0),
     avg_position: 0,
     with_traffic: filtered.filter((r) => (r.clicks || 0) > 0).length,
     without_visibility: filtered.filter((r) => (r.impressions || 0) === 0 && !r.rank_position).length,
@@ -1373,7 +1443,358 @@ async function handleContentPerformance(env, url) {
   const posRows = filtered.filter((r) => r.rank_position);
   summary.avg_position = posRows.length ? Math.round(posRows.reduce((s, r) => s + r.rank_position, 0) / posRows.length * 10) / 10 : 0;
 
-  return { rows: filtered, summary, latest_gsc_day: latestGscDay, latest_rank_day: latestRankDay };
+  return {
+    rows: filtered,
+    summary,
+    latest_gsc_day: latestGscDay,
+    latest_rank_day: latestRankDay,
+    latest_backlink_day: latestBacklinkDay,
+    trend_days: { prev7, prev28, prev90 },
+  };
+}
+
+// ---------------------------------------------------------------- /api/content_decay
+async function handleContentDecay(env, url) {
+  const property = url.searchParams.get("property") || "all";
+  const risk = url.searchParams.get("risk") || "all";
+  const limit = parseInt(url.searchParams.get("limit") || "200", 10);
+
+  // Reuse the same join logic as content_performance
+  let inventory = [];
+  try {
+    inventory = await sbFetchAll(env, "/content_inventory?select=*&order=updated_date.desc&limit=5000");
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.includes("content_inventory") && (msg.includes("does not exist") || msg.includes("Not found"))) {
+      return { rows: [], summary: {} };
+    }
+    throw e;
+  }
+
+  let gscStats = [];
+  try {
+    gscStats = await sbFetchAll(env, "/gsc_page_stats?select=*&order=day.desc&limit=5000");
+  } catch (e) {
+    gscStats = [];
+  }
+  const latestGscDay = gscStats.length ? gscStats[0].day : null;
+  const gscByPage = {};
+  gscStats.forEach((r) => {
+    if (r.day !== latestGscDay) return;
+    gscByPage[r.page] = { clicks: r.clicks || 0, impressions: r.impressions || 0, ctr: r.ctr || 0, position: r.position || 0 };
+  });
+
+  let ranks = [];
+  try {
+    ranks = await sbFetchAll(env, "/rank_snapshots?select=url,position,keyword,day&order=day.desc&limit=10000");
+  } catch (e) {
+    ranks = [];
+  }
+  const latestRankDay = ranks.length ? ranks[0].day : null;
+  const rankByUrl = {};
+  ranks.forEach((r) => {
+    if (r.day !== latestRankDay) return;
+    if (!rankByUrl[r.url] || (r.position || 999) < (rankByUrl[r.url].position || 999)) {
+      rankByUrl[r.url] = { position: r.position, keyword: r.keyword };
+    }
+  });
+
+  let clusters = [];
+  try {
+    clusters = await sbFetchAll(env, "/content_clusters?select=*&order=cluster.asc");
+  } catch (e) {
+    clusters = [];
+  }
+  const clusterKeywords = {};
+  clusters.forEach((c) => {
+    const kws = (c.target_keywords || "").split(",").map((k) => k.trim().toLowerCase()).filter(Boolean);
+    clusterKeywords[c.cluster] = { property: c.property, keywords: kws };
+  });
+
+  function assignCluster(item) {
+    const tags = [];
+    try {
+      tags.push(...JSON.parse(item.tags || "[]").map((t) => String(t).toLowerCase()));
+    } catch (e) {}
+    const title = (item.title || "").toLowerCase();
+    for (const [name, meta] of Object.entries(clusterKeywords)) {
+      if (meta.property !== item.property) continue;
+      const match = meta.keywords.some((k) => tags.includes(k) || title.includes(k));
+      if (match) return name;
+    }
+    return null;
+  }
+
+  const today = new Date();
+  const oneYearAgo = new Date(today.getTime() - 365 * 86400000);
+  const twoYearsAgo = new Date(today.getTime() - 730 * 86400000);
+
+  const rows = inventory.map((item) => {
+    const gsc = gscByPage[item.url] || { clicks: 0, impressions: 0, ctr: 0, position: 0 };
+    const rank = rankByUrl[item.url] || { position: null, keyword: null };
+    const cluster = assignCluster(item);
+    const updated = item.updated_date ? new Date(item.updated_date) : null;
+    const published = item.published_date ? new Date(item.published_date) : null;
+
+    const isStale = updated ? updated < oneYearAgo : (published ? published < oneYearAgo : false);
+    const isVeryStale = updated ? updated < twoYearsAgo : (published ? published < twoYearsAgo : false);
+    const noVisibility = gsc.impressions === 0 && !rank.position;
+    const pageThreePlus = rank.position && rank.position > 20 && gsc.clicks > 0;
+    const highImpressionsNoClicks = gsc.impressions > 200 && gsc.clicks === 0;
+
+    let riskLevel = "healthy";
+    let action = "monitor";
+    let reason = "";
+    let score = 0;
+
+    if (isVeryStale && (noVisibility || (rank.position && rank.position > 30))) {
+      riskLevel = "critical";
+      action = "refresh";
+      reason = "very stale + no visibility";
+      score = 100;
+    } else if (isStale && (noVisibility || pageThreePlus)) {
+      riskLevel = "high";
+      action = isStale ? "refresh" : "improve";
+      reason = isStale ? "stale + underperforming" : "underperforming";
+      score = 75;
+    } else if (isStale || highImpressionsNoClicks) {
+      riskLevel = "medium";
+      action = isStale ? "update" : "optimize";
+      reason = isStale ? "content is stale" : "impressions but no clicks";
+      score = 50;
+    } else if (!cluster) {
+      riskLevel = "low";
+      action = "cluster";
+      reason = "orphan page, assign cluster";
+      score = 25;
+    }
+
+    return {
+      ...item,
+      cluster,
+      clicks: gsc.clicks,
+      impressions: gsc.impressions,
+      ctr: gsc.ctr,
+      gsc_position: gsc.position,
+      rank_position: rank.position,
+      rank_keyword: rank.keyword,
+      risk: riskLevel,
+      action,
+      reason,
+      score,
+      days_since_updated: updated ? Math.floor((today - updated) / 86400000) : null,
+    };
+  });
+
+  let filtered = rows;
+  if (property !== "all") filtered = filtered.filter((r) => r.property === property);
+  if (risk !== "all") filtered = filtered.filter((r) => r.risk === risk);
+  filtered = filtered.filter((r) => r.score > 0);
+  filtered.sort((a, b) => b.score - a.score);
+  filtered = filtered.slice(0, limit);
+
+  const summary = {
+    total: filtered.length,
+    critical: filtered.filter((r) => r.risk === "critical").length,
+    high: filtered.filter((r) => r.risk === "high").length,
+    medium: filtered.filter((r) => r.risk === "medium").length,
+    low: filtered.filter((r) => r.risk === "low").length,
+  };
+
+  return { rows: filtered, summary };
+}
+
+// ---------------------------------------------------------------- /api/content_links
+async function handleContentLinks(env, url) {
+  const property = url.searchParams.get("property") || "all";
+  const clusterFilter = url.searchParams.get("cluster") || "";
+  const limit = parseInt(url.searchParams.get("limit") || "200", 10);
+
+  let inventory = [];
+  try {
+    inventory = await sbFetchAll(env, "/content_inventory?select=url,property,content_type,title,tags,internal_links&limit=5000");
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.includes("content_inventory") && (msg.includes("does not exist") || msg.includes("Not found"))) {
+      return { suggestions: [] };
+    }
+    throw e;
+  }
+  if (property !== "all") inventory = inventory.filter((r) => r.property === property);
+
+  let clusters = [];
+  try {
+    clusters = await sbFetchAll(env, "/content_clusters?select=*&order=cluster.asc");
+  } catch (e) {
+    clusters = [];
+  }
+  const clusterKeywords = {};
+  clusters.forEach((c) => {
+    const kws = (c.target_keywords || "").split(",").map((k) => k.trim().toLowerCase()).filter(Boolean);
+    clusterKeywords[c.cluster] = { property: c.property, keywords: kws };
+  });
+
+  function assignCluster(item) {
+    const tags = [];
+    try {
+      tags.push(...JSON.parse(item.tags || "[]").map((t) => String(t).toLowerCase()));
+    } catch (e) {}
+    const title = (item.title || "").toLowerCase();
+    for (const [name, meta] of Object.entries(clusterKeywords)) {
+      if (meta.property !== item.property) continue;
+      const match = meta.keywords.some((k) => tags.includes(k) || title.includes(k));
+      if (match) return name;
+    }
+    return null;
+  }
+
+  const items = inventory.map((item) => ({ ...item, cluster: assignCluster(item) }));
+  if (clusterFilter) items.forEach((item) => { item.cluster = clusterFilter; });
+
+  const byCluster = {};
+  items.forEach((item) => {
+    const c = item.cluster || "(none)";
+    if (!byCluster[c]) byCluster[c] = [];
+    byCluster[c].push(item);
+  });
+
+  const suggestions = [];
+  Object.entries(byCluster).forEach(([cluster, clusterItems]) => {
+    if (clusterItems.length < 2) return;
+    clusterItems.forEach((source) => {
+      const candidates = clusterItems
+        .filter((target) => target.url !== source.url)
+        .map((target) => {
+          const sourceTitle = (source.title || "").toLowerCase();
+          const targetTitle = (target.title || "").toLowerCase();
+          let score = 0;
+          try {
+            const tags = JSON.parse(target.tags || "[]").map((t) => String(t).toLowerCase());
+            if (sourceTitle && tags.some((t) => sourceTitle.includes(t))) score += 3;
+          } catch (e) {}
+          if (sourceTitle && targetTitle.includes(sourceTitle.split(" ")[0])) score += 1;
+          score += (target.internal_links || 0) < 3 ? 2 : 0;
+          return { target, score };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+
+      if (candidates.length) {
+        suggestions.push({
+          source_url: source.url,
+          source_title: source.title,
+          source_property: source.property,
+          cluster,
+          internal_links: source.internal_links || 0,
+          targets: candidates.map((c) => ({
+            url: c.target.url,
+            title: c.target.title,
+            score: c.score,
+          })),
+        });
+      }
+    });
+  });
+
+  const flat = suggestions
+    .sort((a, b) => a.internal_links - b.internal_links || b.targets[0].score - a.targets[0].score)
+    .slice(0, limit);
+  return { suggestions: flat, clusters: Object.keys(byCluster) };
+}
+
+// ---------------------------------------------------------------- /api/content_authors
+async function handleContentAuthors(env, url) {
+  const property = url.searchParams.get("property") || "all";
+
+  let inventory = [];
+  try {
+    inventory = await sbFetchAll(env, "/content_inventory?select=*&order=updated_date.desc&limit=5000");
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.includes("content_inventory") && (msg.includes("does not exist") || msg.includes("Not found"))) {
+      return { authors: [] };
+    }
+    throw e;
+  }
+
+  let gscStats = [];
+  try {
+    gscStats = await sbFetchAll(env, "/gsc_page_stats?select=*&order=day.desc&limit=5000");
+  } catch (e) {
+    gscStats = [];
+  }
+  const latestGscDay = gscStats.length ? gscStats[0].day : null;
+  const gscByPage = {};
+  gscStats.forEach((r) => {
+    if (r.day !== latestGscDay) return;
+    gscByPage[r.page] = { clicks: r.clicks || 0, impressions: r.impressions || 0 };
+  });
+
+  let ranks = [];
+  try {
+    ranks = await sbFetchAll(env, "/rank_snapshots?select=url,position,day&order=day.desc&limit=10000");
+  } catch (e) {
+    ranks = [];
+  }
+  const latestRankDay = ranks.length ? ranks[0].day : null;
+  const rankByUrl = {};
+  ranks.forEach((r) => {
+    if (r.day !== latestRankDay) return;
+    if (!rankByUrl[r.url] || (r.position || 999) < (rankByUrl[r.url].position || 999)) {
+      rankByUrl[r.url] = { position: r.position };
+    }
+  });
+
+  let backlinkStats = [];
+  try {
+    backlinkStats = await sbFetchAll(env, "/backlink_pages?select=*&order=day.desc&limit=5000");
+  } catch (e) {
+    backlinkStats = [];
+  }
+  const latestBacklinkDay = backlinkStats.length ? backlinkStats[0].day : null;
+  const blByUrl = {};
+  backlinkStats.forEach((r) => {
+    if (r.day !== latestBacklinkDay) return;
+    blByUrl[r.url] = { backlinks: r.backlinks || 0, refdomains: r.refdomains || 0 };
+  });
+
+  const byAuthor = {};
+  inventory.forEach((item) => {
+    if (property !== "all" && item.property !== property) return;
+    let authors = [];
+    try {
+      const parsed = JSON.parse(item.authors || "[]");
+      authors = Array.isArray(parsed) ? parsed : [item.authors];
+    } catch (e) {
+      authors = item.authors ? [item.authors] : [];
+    }
+    if (!authors.length) authors = ["(no author)"];
+    authors.forEach((name) => {
+      const key = String(name).trim();
+      if (!key) return;
+      if (!byAuthor[key]) {
+        byAuthor[key] = { name: key, pages: 0, clicks: 0, impressions: 0, backlinks: 0, refdomains: 0, top10: 0, avg_position: 0, positions: [] };
+      }
+      const gsc = gscByPage[item.url] || {};
+      const rank = rankByUrl[item.url] || {};
+      const bl = blByUrl[item.url] || {};
+      byAuthor[key].pages += 1;
+      byAuthor[key].clicks += gsc.clicks || 0;
+      byAuthor[key].impressions += gsc.impressions || 0;
+      byAuthor[key].backlinks += bl.backlinks || 0;
+      byAuthor[key].refdomains += bl.refdomains || 0;
+      if (rank.position && rank.position <= 10) byAuthor[key].top10 += 1;
+      if (rank.position) byAuthor[key].positions.push(rank.position);
+    });
+  });
+
+  const authors = Object.values(byAuthor).map((a) => {
+    a.avg_position = a.positions.length ? Math.round(a.positions.reduce((s, p) => s + p, 0) / a.positions.length * 10) / 10 : 0;
+    delete a.positions;
+    return a;
+  }).sort((a, b) => b.clicks - a.clicks);
+
+  return { authors, latest_gsc_day: latestGscDay, latest_rank_day: latestRankDay, latest_backlink_day: latestBacklinkDay };
 }
 
 function cacheKey(request, route) {
@@ -1423,6 +1844,9 @@ export default {
         else if (route === "content_pipeline") result = await handleContentPipeline(env, request, url);
         else if (route === "content_clusters") result = await handleContentClusters(env, url);
         else if (route === "content_performance") result = await handleContentPerformance(env, url);
+        else if (route === "content_decay") result = await handleContentDecay(env, url);
+        else if (route === "content_links") result = await handleContentLinks(env, url);
+        else if (route === "content_authors") result = await handleContentAuthors(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
