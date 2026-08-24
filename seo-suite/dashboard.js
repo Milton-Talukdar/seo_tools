@@ -3146,6 +3146,12 @@
   }
 
   // ---------------------------------------------------------------- keyword research
+  function intentChip(intent) {
+    if (!intent) return '<span class="sub">—</span>';
+    const cls = { informational: '', navigational: 'cite', commercial: 'you', transactional: 'rose', info: '', nav: 'cite', com: 'you', trans: 'rose' }[intent] || '';
+    return '<span class="chip ' + cls + '">' + esc(intent) + '</span>';
+  }
+
   async function loadKeywords() {
     const el = document.getElementById('panel-keywords');
     try {
@@ -3174,12 +3180,6 @@
         '<div class="kpi"><div class="num">' + fmtNum(byStatus.ranking || 0) + '</div><div class="label">Ranking</div></div>' +
         '<div class="kpi"><div class="num">' + fmtNum(gaps.length) + '</div><div class="label">Gaps from rank data</div></div>' +
         '</div>';
-
-      function intentChip(intent) {
-        if (!intent) return '<span class="sub">—</span>';
-        const cls = { informational: '', navigational: 'cite', commercial: 'you', transactional: 'rose' }[intent] || '';
-        return '<span class="chip ' + cls + '">' + esc(intent) + '</span>';
-      }
 
       const tableRows = rows.map(function (r) {
         const search = [r.keyword, r.cluster, r.search_intent, r.source, r.status].filter(Boolean).join(' ').toLowerCase();
@@ -3210,7 +3210,7 @@
         '<button class="kw-export" type="button">Export CSV</button>' +
         '<span class="kw-count sub">' + fmtNum(rows.length) + ' keywords</span></div>';
 
-      const tableHtml = '<div class="card">' + filterHtml +
+      const trackedHtml = '<div class="kw-panel active" data-panel="tracked">' + filterHtml +
         '<table class="kw-table"><thead><tr>' +
         '<th class="sortable" data-sort="keyword">Keyword <span class="arrow"></span></th>' +
         '<th>Property</th>' +
@@ -3221,12 +3221,69 @@
         '<th>Cluster</th>' +
         '<th class="sortable" data-sort="status">Status <span class="arrow"></span></th>' +
         '<th>Action</th>' +
-        '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+        '</tr></thead><tbody>' + tableRows + '</tbody></table>' +
+        (gaps.length ? '<div class="card" style="margin-top:14px"><h3 style="margin:0 0 10px">Keyword gaps from rank data</h3>' +
+        '<table class="kw-gap-table"><thead><tr><th>Keyword</th><th>Property</th><th>Rank signals</th><th></th></tr></thead><tbody>' + gapRows + '</tbody></table></div>' : '') +
+        '</div>';
 
-      const gapsHtml = gaps.length ? '<div class="card" style="margin-top:14px"><h3 style="margin:0 0 10px">Keyword gaps from rank data</h3>' +
-        '<table class="kw-gap-table"><thead><tr><th>Keyword</th><th>Property</th><th>Rank signals</th><th></th></tr></thead><tbody>' + gapRows + '</tbody></table></div>' : '';
+      function discoveryFilters() {
+        return '<div class="table-tools no-print kw-discovery-tools">' +
+          '<input class="kw-d-search" type="search" placeholder="Filter results…">' +
+          '<input class="kw-d-min-vol" type="number" placeholder="Min vol">' +
+          '<input class="kw-d-max-vol" type="number" placeholder="Max vol">' +
+          '<input class="kw-d-min-kd" type="number" placeholder="Min KD">' +
+          '<input class="kw-d-max-kd" type="number" placeholder="Max KD">' +
+          '<input class="kw-d-min-cpc" type="number" placeholder="Min CPC" step="0.01">' +
+          '<input class="kw-d-max-cpc" type="number" placeholder="Max CPC" step="0.01">' +
+          '<input class="kw-d-min-words" type="number" placeholder="Min words">' +
+          '<select class="kw-d-intent"><option value="">All intent</option><option value="info">Info</option><option value="nav">Nav</option><option value="com">Commercial</option><option value="trans">Transactional</option></select>' +
+          '<button class="kw-d-export" type="button">Export CSV</button>' +
+          '<span class="kw-d-count sub">0 results</span></div>';
+      }
 
-      el.innerHTML = '<h2>Keyword Research</h2>' + kpiHtml + tableHtml + gapsHtml;
+      function discoveryBulk() {
+        return '<div class="kw-discovery-bulk no-print">' +
+          '<label class="kw-d-select-all-label"><input type="checkbox" class="kw-d-select-all"> Select all visible</label>' +
+          '<button class="kw-d-track" type="button">Add selected to tracker</button>' +
+          '<button class="kw-d-pipeline" type="button">Push selected to pipeline</button>' +
+          '<span class="kw-d-bulk-status sub"></span></div>';
+      }
+
+      function discoveryTable(isSite) {
+        return '<table class="kw-table kw-discovery-table"><thead><tr>' +
+          '<th><input type="checkbox" class="kw-d-select-all-header"></th>' +
+          '<th class="sortable" data-sort="keyword">Keyword <span class="arrow"></span></th>' +
+          '<th class="sortable" data-sort="volume">Volume <span class="arrow"></span></th>' +
+          '<th class="sortable" data-sort="difficulty">KD <span class="arrow"></span></th>' +
+          '<th>CPC</th>' +
+          '<th>Intent</th>' +
+          '<th class="sortable" data-sort="words">Words <span class="arrow"></span></th>' +
+          (isSite ? '<th class="sortable" data-sort="position">Position <span class="arrow"></span></th><th>URL</th>' : '') +
+          '</tr></thead><tbody></tbody></table>';
+      }
+
+      const discoveryHtml = '<div class="kw-panel" data-panel="ideas">' + discoveryFilters() + discoveryBulk() + discoveryTable(false) + '</div>' +
+        '<div class="kw-panel" data-panel="matching">' + discoveryFilters() + discoveryBulk() + discoveryTable(false) + '</div>' +
+        '<div class="kw-panel" data-panel="questions">' + discoveryFilters() + discoveryBulk() + discoveryTable(false) + '</div>' +
+        '<div class="kw-panel" data-panel="related">' + discoveryFilters() + discoveryBulk() + discoveryTable(false) + '</div>' +
+        '<div class="kw-panel" data-panel="site">' + discoveryFilters() + discoveryBulk() + discoveryTable(true) + '</div>';
+
+      const tabsHtml = '<div class="kw-tabs">' +
+        '<button class="kw-tab active" data-tab="tracked">Tracked (' + fmtNum(rows.length) + ')</button>' +
+        '<button class="kw-tab" data-tab="ideas">Ideas</button>' +
+        '<button class="kw-tab" data-tab="matching">Matching terms</button>' +
+        '<button class="kw-tab" data-tab="questions">Questions</button>' +
+        '<button class="kw-tab" data-tab="related">Related</button>' +
+        '<button class="kw-tab" data-tab="site">Site keywords</button>' +
+        '</div>';
+
+      const seedBar = '<div class="kw-seed-bar">' +
+        '<input class="kw-seed" type="search" placeholder="Enter seed keyword (e.g. employee engagement)">' +
+        '<select class="kw-discover-property">' + propOpts + '</select>' +
+        '<button class="kw-discover-btn" type="button">Discover</button>' +
+        '<span class="kw-discover-status sub"></span></div>';
+
+      el.innerHTML = '<h2>Keyword Research</h2>' + kpiHtml + seedBar + tabsHtml + trackedHtml + discoveryHtml;
       initKeywordsInteractions();
     } catch (e) {
       el.innerHTML = errorCard(e.message);
@@ -3236,15 +3293,259 @@
   function initKeywordsInteractions() {
     const wrap = document.getElementById('panel-keywords');
     if (!wrap) return;
-    const search = wrap.querySelector('.kw-search');
-    const propSel = wrap.querySelector('.kw-property');
-    const statusSel = wrap.querySelector('.kw-status');
-    const clusterSel = wrap.querySelector('.kw-cluster');
-    const minVol = wrap.querySelector('.kw-min-volume');
-    const tbody = wrap.querySelector('tbody');
+
+    const tabs = wrap.querySelectorAll('.kw-tab');
+    const panels = wrap.querySelectorAll('.kw-panel');
+    const seedInput = wrap.querySelector('.kw-seed');
+    const discoverProp = wrap.querySelector('.kw-discover-property');
+    const discoverBtn = wrap.querySelector('.kw-discover-btn');
+    const discoverStatus = wrap.querySelector('.kw-discover-status');
+    const discoveryCache = { ideas: { items: [] }, matching: { items: [] }, questions: { items: [] }, related: { items: [] }, site: { items: [] } };
+
+    function switchTab(type) {
+      tabs.forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-tab') === type); });
+      panels.forEach(function (p) { p.classList.toggle('active', p.getAttribute('data-panel') === type); });
+      if (type !== 'tracked' && !discoveryCache[type].loaded) {
+        runDiscovery(type);
+      }
+    }
+
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () { switchTab(tab.getAttribute('data-tab')); });
+    });
+
+    async function runDiscovery(type) {
+      const seed = (seedInput.value || '').trim();
+      const property = (discoverProp.value || 'vantagecircle');
+      const cfg = PROPERTIES[property] || PROPERTIES.vantagecircle;
+      if (type !== 'site' && !seed) {
+        if (discoverStatus) discoverStatus.textContent = 'Enter a seed keyword first.';
+        return;
+      }
+      if (discoverStatus) discoverStatus.textContent = 'Loading ' + type + '…';
+      try {
+        let path;
+        if (type === 'site') {
+          path = 'keywords/site?property=' + encodeURIComponent(property) + '&target=' + encodeURIComponent(cfg.domain);
+        } else {
+          path = 'keywords/discover?seed=' + encodeURIComponent(seed) + '&type=' + encodeURIComponent(type) + '&property=' + encodeURIComponent(property);
+        }
+        const data = await api(path);
+        const items = data.items || [];
+        discoveryCache[type] = { loaded: true, items: items, seed: seed, property: property };
+        renderDiscovery(type);
+        if (discoverStatus) discoverStatus.textContent = items.length + ' ' + type + ' results';
+      } catch (e) {
+        if (discoverStatus) discoverStatus.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    function renderDiscovery(type) {
+      const panel = wrap.querySelector('.kw-panel[data-panel="' + type + '"]');
+      if (!panel) return;
+      const cache = discoveryCache[type];
+      const isSite = type === 'site';
+      const tbody = panel.querySelector('tbody');
+      tbody.innerHTML = cache.items.map(function (item, idx) {
+        return '<tr data-idx="' + idx + '" data-keyword="' + esc(item.keyword) + '" data-volume="' + (item.search_volume || 0) + '" data-difficulty="' + (item.keyword_difficulty || 0) + '" data-cpc="' + (item.cpc || 0) + '" data-words="' + (item.words || 0) + '" data-intent="' + esc(item.search_intent || '') + '" data-position="' + (item.position || 999) + '">' +
+          '<td><input type="checkbox" class="kw-d-check"></td>' +
+          '<td><b>' + esc(item.keyword) + '</b></td>' +
+          '<td class="num">' + fmtNum(item.search_volume || 0) + '</td>' +
+          '<td class="num">' + (item.keyword_difficulty != null ? item.keyword_difficulty : '—') + '</td>' +
+          '<td class="num">' + (item.cpc ? '$' + item.cpc.toFixed(2) : '—') + '</td>' +
+          '<td>' + intentChip(item.search_intent) + '</td>' +
+          '<td class="num">' + (item.words || '—') + '</td>' +
+          (isSite ? '<td class="num">' + (item.position || '—') + '</td><td><a href="' + esc(item.url || '') + '" target="_blank">page</a></td>' : '') +
+          '</tr>';
+      }).join('');
+      applyDiscoveryFilter(type);
+      initDiscoverySort(panel);
+      initDiscoverySelect(panel, type);
+    }
+
+    function applyDiscoveryFilter(type) {
+      const panel = wrap.querySelector('.kw-panel[data-panel="' + type + '"]');
+      if (!panel) return;
+      const q = (panel.querySelector('.kw-d-search').value || '').toLowerCase();
+      const minVol = parseFloat(panel.querySelector('.kw-d-min-vol').value || '0') || 0;
+      const maxVol = parseFloat(panel.querySelector('.kw-d-max-vol').value || '0') || Infinity;
+      const minKd = parseFloat(panel.querySelector('.kw-d-min-kd').value || '0') || 0;
+      const maxKd = parseFloat(panel.querySelector('.kw-d-max-kd').value || '0') || Infinity;
+      const minCpc = parseFloat(panel.querySelector('.kw-d-min-cpc').value || '0') || 0;
+      const maxCpc = parseFloat(panel.querySelector('.kw-d-max-cpc').value || '0') || Infinity;
+      const minWords = parseInt(panel.querySelector('.kw-d-min-words').value || '0', 10) || 0;
+      const intent = panel.querySelector('.kw-d-intent').value;
+      const rows = Array.prototype.slice.call(panel.querySelectorAll('tbody tr'));
+      let n = 0;
+      rows.forEach(function (r) {
+        let ok = true;
+        const keyword = r.getAttribute('data-keyword');
+        const vol = parseFloat(r.getAttribute('data-volume') || '0');
+        const kd = parseFloat(r.getAttribute('data-difficulty') || '0');
+        const cpc = parseFloat(r.getAttribute('data-cpc') || '0');
+        const words = parseInt(r.getAttribute('data-words') || '0', 10);
+        const int = r.getAttribute('data-intent');
+        if (q && keyword.indexOf(q) === -1) ok = false;
+        if (ok && vol < minVol) ok = false;
+        if (ok && maxVol < Infinity && vol > maxVol) ok = false;
+        if (ok && kd < minKd) ok = false;
+        if (ok && maxKd < Infinity && kd > maxKd) ok = false;
+        if (ok && cpc < minCpc) ok = false;
+        if (ok && maxCpc < Infinity && cpc > maxCpc) ok = false;
+        if (ok && words < minWords) ok = false;
+        if (ok && intent && int !== intent) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      panel.querySelector('.kw-d-count').textContent = n + ' results';
+      panel.querySelector('.kw-d-select-all').checked = false;
+      panel.querySelector('.kw-d-select-all-header').checked = false;
+    }
+
+    function initDiscoverySort(panel) {
+      const tbody = panel.querySelector('tbody');
+      const ths = panel.querySelectorAll('th.sortable');
+      let sortKey = 'volume', sortDir = -1;
+      function keyVal(r, k) {
+        if (k === 'keyword') return r.getAttribute('data-keyword').toLowerCase();
+        if (k === 'volume') return parseFloat(r.getAttribute('data-volume') || '0');
+        if (k === 'difficulty') return parseFloat(r.getAttribute('data-difficulty') || '0');
+        if (k === 'words') return parseInt(r.getAttribute('data-words') || '0', 10);
+        if (k === 'position') return parseFloat(r.getAttribute('data-position') || '999');
+        return '';
+      }
+      function cmp(a, b) {
+        const va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sortDir;
+        if (va < vb) return -sortDir;
+        if (va > vb) return sortDir;
+        return 0;
+      }
+      function applySort() {
+        const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+        rows.sort(cmp);
+        rows.forEach(function (r) { tbody.appendChild(r); });
+        ths.forEach(function (th) {
+          const arr = th.querySelector('.arrow');
+          if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+        });
+      }
+      ths.forEach(function (th) {
+        th.addEventListener('click', function () {
+          const k = th.getAttribute('data-sort');
+          if (k === sortKey) sortDir = -sortDir;
+          else { sortKey = k; sortDir = k === 'keyword' ? 1 : -1; }
+          applySort();
+        });
+      });
+    }
+
+    function initDiscoverySelect(panel, type) {
+      const selectAll = panel.querySelector('.kw-d-select-all');
+      const selectAllHeader = panel.querySelector('.kw-d-select-all-header');
+      function updateChecks(checked) {
+        panel.querySelectorAll('tbody .kw-d-check').forEach(function (cb) { cb.checked = checked; });
+        selectAll.checked = checked;
+        selectAllHeader.checked = checked;
+      }
+      if (selectAll) selectAll.addEventListener('change', function () { updateChecks(selectAll.checked); });
+      if (selectAllHeader) selectAllHeader.addEventListener('change', function () { updateChecks(selectAllHeader.checked); });
+    }
+
+    function getSelectedKeywords(panel) {
+      const out = [];
+      panel.querySelectorAll('tbody tr').forEach(function (r) {
+        if (r.style.display === 'none') return;
+        const cb = r.querySelector('.kw-d-check');
+        if (cb && cb.checked) out.push(r.getAttribute('data-keyword'));
+      });
+      return out;
+    }
+
+    panels.forEach(function (panel) {
+      if (panel.getAttribute('data-panel') === 'tracked') return;
+      const type = panel.getAttribute('data-panel');
+      ['kw-d-search', 'kw-d-min-vol', 'kw-d-max-vol', 'kw-d-min-kd', 'kw-d-max-kd', 'kw-d-min-cpc', 'kw-d-max-cpc', 'kw-d-min-words', 'kw-d-intent'].forEach(function (cls) {
+        const el = panel.querySelector('.' + cls);
+        if (el) el.addEventListener('input', function () { applyDiscoveryFilter(type); });
+      });
+      panel.querySelector('.kw-d-export').addEventListener('click', function () {
+        const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+        const visible = Array.prototype.slice.call(panel.querySelectorAll('tbody tr')).filter(function (r) { return r.style.display !== 'none'; });
+        const isSite = type === 'site';
+        const headers = isSite ? 'keyword,search_volume,kd,cpc,intent,words,position,url' : 'keyword,search_volume,kd,cpc,intent,words';
+        const csv = [headers].concat(visible.map(function (r) {
+          const base = [q(r.getAttribute('data-keyword')), r.getAttribute('data-volume'), r.getAttribute('data-difficulty'), r.getAttribute('data-cpc'), q(r.cells[5].textContent), r.getAttribute('data-words')];
+          if (isSite) base.push(r.getAttribute('data-position'), q((r.querySelector('a') || {}).href || ''));
+          return base.join(',');
+        })).join('\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        a.download = 'keyword-discovery-' + type + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+      panel.querySelector('.kw-d-track').addEventListener('click', async function () {
+        const property = discoverProp.value || 'vantagecircle';
+        const selected = getSelectedKeywords(panel);
+        if (!selected.length) return;
+        const statusEl = panel.querySelector('.kw-d-bulk-status');
+        if (statusEl) statusEl.textContent = 'Adding…';
+        let ok = 0;
+        for (const kw of selected) {
+          try {
+            await fetch('/api/keywords', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, property: property, status: 'idea', source: 'discovery_' + type }) });
+            ok++;
+          } catch (err) {}
+        }
+        if (statusEl) statusEl.textContent = 'Added ' + ok + ' of ' + selected.length + ' to tracker';
+      });
+      panel.querySelector('.kw-d-pipeline').addEventListener('click', async function () {
+        const property = discoverProp.value || 'vantagecircle';
+        const selected = getSelectedKeywords(panel);
+        if (!selected.length) return;
+        const statusEl = panel.querySelector('.kw-d-bulk-status');
+        if (statusEl) statusEl.textContent = 'Pushing…';
+        let ok = 0;
+        for (const kw of selected) {
+          try {
+            await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: kw, property: property, stage: 'idea', target_keyword: kw }) });
+            ok++;
+          } catch (err) {}
+        }
+        if (statusEl) statusEl.textContent = 'Pushed ' + ok + ' of ' + selected.length + ' to pipeline';
+      });
+    });
+
+    if (discoverBtn) {
+      discoverBtn.addEventListener('click', function () {
+        const activeTab = wrap.querySelector('.kw-tab.active').getAttribute('data-tab');
+        if (activeTab === 'tracked') switchTab('ideas');
+        else runDiscovery(activeTab);
+      });
+    }
+    if (seedInput) {
+      seedInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          const activeTab = wrap.querySelector('.kw-tab.active').getAttribute('data-tab');
+          if (activeTab === 'tracked') switchTab('ideas');
+          else runDiscovery(activeTab);
+        }
+      });
+    }
+
+    // ---- existing tracked table interactions
+    const trackedPanel = wrap.querySelector('.kw-panel[data-panel="tracked"]');
+    if (!trackedPanel) return;
+    const search = trackedPanel.querySelector('.kw-search');
+    const propSel = trackedPanel.querySelector('.kw-property');
+    const statusSel = trackedPanel.querySelector('.kw-status');
+    const clusterSel = trackedPanel.querySelector('.kw-cluster');
+    const minVol = trackedPanel.querySelector('.kw-min-volume');
+    const tbody = trackedPanel.querySelector('tbody');
     const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
-    const count = wrap.querySelector('.kw-count');
-    const ths = wrap.querySelectorAll('th.sortable');
+    const count = trackedPanel.querySelector('.kw-count');
+    const ths = trackedPanel.querySelectorAll('th.sortable');
     let sortKey = 'volume', sortDir = -1;
 
     function applyFilter() {
@@ -3305,7 +3606,7 @@
       if (el) el.addEventListener('input', applyFilter);
     });
 
-    const exportBtn = wrap.querySelector('.kw-export');
+    const exportBtn = trackedPanel.querySelector('.kw-export');
     if (exportBtn) exportBtn.addEventListener('click', function () {
       const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
       const visible = rows.filter(function (r) { return r.style.display !== 'none'; });
@@ -3319,41 +3620,25 @@
       URL.revokeObjectURL(a.href);
     });
 
-    // Add gap keywords to tracking
     wrap.querySelectorAll('.kw-add').forEach(function (btn) {
       btn.addEventListener('click', async function () {
-        const body = {
-          keyword: btn.getAttribute('data-keyword'),
-          property: btn.getAttribute('data-property'),
-          status: 'idea',
-          source: 'rank_gap'
-        };
+        const body = { keyword: btn.getAttribute('data-keyword'), property: btn.getAttribute('data-property'), status: 'idea', source: 'rank_gap' };
         try {
           await fetch('/api/keywords', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           btn.textContent = 'Added';
           btn.disabled = true;
-        } catch (err) {
-          alert('Failed: ' + err.message);
-        }
+        } catch (err) { alert('Failed: ' + err.message); }
       });
     });
 
-    // Add tracked keyword to pipeline
     wrap.querySelectorAll('.kw-add-pipeline').forEach(function (btn) {
       btn.addEventListener('click', async function () {
-        const body = {
-          title: btn.getAttribute('data-keyword'),
-          property: btn.getAttribute('data-property'),
-          stage: 'idea',
-          target_keyword: btn.getAttribute('data-keyword')
-        };
+        const body = { title: btn.getAttribute('data-keyword'), property: btn.getAttribute('data-property'), stage: 'idea', target_keyword: btn.getAttribute('data-keyword') };
         try {
           await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           btn.textContent = 'In pipeline';
           btn.disabled = true;
-        } catch (err) {
-          alert('Failed: ' + err.message);
-        }
+        } catch (err) { alert('Failed: ' + err.message); }
       });
     });
 

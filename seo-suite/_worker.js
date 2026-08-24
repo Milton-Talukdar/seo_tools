@@ -74,6 +74,61 @@ async function sbPatch(env, table, filters, body) {
   return { ok: true };
 }
 
+// ---------------------------------------------------------------- DataForSEO helpers
+async function dfsPost(env, endpoint, payload) {
+  if (!env.DATAFORSEO_LOGIN || !env.DATAFORSEO_PASSWORD) {
+    throw new Error("DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD not configured");
+  }
+  const auth = btoa(`${env.DATAFORSEO_LOGIN}:${env.DATAFORSEO_PASSWORD}`);
+  const res = await fetch(`https://api.dataforseo.com/v3${endpoint}`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`DataForSEO ${res.status}: ${text}`);
+  }
+  const data = await res.json();
+  const task = data.tasks && data.tasks[0];
+  if (!task) throw new Error("DataForSEO: no task in response");
+  if (task.status_code !== 20000) {
+    throw new Error(`DataForSEO ${task.status_code}: ${task.status_message || "error"}`);
+  }
+  return task.result || [];
+}
+
+function normalizeKeyword(kw) {
+  return String(kw || "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function wordCount(kw) {
+  return String(kw || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function intentShort(intent) {
+  if (!intent) return "";
+  const map = { informational: "info", navigational: "nav", commercial: "com", transactional: "trans" };
+  return map[intent] || intent.slice(0, 4);
+}
+
+function normalizeDfsItem(item) {
+  const kw = item.keyword || "";
+  const kd = item.keyword_difficulty != null ? item.keyword_difficulty : (item.keyword_properties?.keyword_difficulty);
+  const intent = item.search_intent || item.search_intent_info?.main_intent || item.intent;
+  const vol = item.search_volume != null ? item.search_volume : (item.keyword_data?.keyword_info?.search_volume);
+  const cpcVal = item.cpc != null ? item.cpc : (item.keyword_data?.keyword_info?.cpc);
+  return {
+    keyword: normalizeKeyword(kw),
+    search_volume: vol || 0,
+    cpc: cpcVal || 0,
+    keyword_difficulty: kd != null ? Math.round(kd) : null,
+    search_intent: intentShort(intent),
+    competition: item.competition || item.keyword_data?.keyword_info?.competition || 0,
+    words: wordCount(kw),
+  };
+}
+
 function todayISO() {
   return new Date().toISOString().split("T")[0];
 }
@@ -636,6 +691,9 @@ const CACHE_TTL = {
   content_authors: 1800,
   keywords: 1800,
   keyword_gaps: 1800,
+  "keywords/discover": 3600,
+  "keywords/site": 3600,
+  "keywords/overview": 3600,
 };
 
 function cacheEnabled(env) {
@@ -1887,10 +1945,116 @@ async function handleKeywordGaps(env, url) {
   return { rows: rows.slice(0, limit) };
 }
 
+// ---------------------------------------------------------------- /api/keywords/discover
+async function handleKeywordDiscover(env, url) {
+  const seed = url.searchParams.get("seed") || "";
+  const type = url.searchParams.get("type") || "ideas"; // ideas | suggestions | related | questions
+  const property = url.searchParams.get("property") || "vantagecircle";
+  const country = url.searchParams.get("country") || "us";
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "100", 10), 200);
+
+  if (!seed) return jsonError("seed is required", 400);
+
+  const locationCode = country === "us" ? 2840 : 2826;
+  let endpoint, payload;
+  if (type === "suggestions" || type === "questions") {
+    endpoint = "/dataforseo_labs/google/keywords_suggestions/live";
+    payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
+  } else if (type === "related") {
+    endpoint = "/dataforseo_labs/google/related_keywords/live";
+    payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
+  } else {
+    endpoint = "/dataforseo_labs/google/keywords_ideas/live";
+    payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
+  }
+
+  const result = await dfsPost(env, endpoint, payload);
+  let items = [];
+  for (const r of result) {
+    for (const item of r.items || []) {
+      items.push(normalizeDfsItem(item));
+    }
+  }
+
+  if (type === "questions") {
+    const questionWords = /^(who|what|where|when|why|how|which|are|is|can|do|does|will|should|best|top|vs|versus)\b/i;
+    items = items.filter((i) => questionWords.test(i.keyword));
+  }
+
+  const seen = new Set();
+  items = items.filter((i) => {
+    if (seen.has(i.keyword)) return false;
+    seen.add(i.keyword);
+    return true;
+  });
+
+  return { seed, type, property, country, items: items.slice(0, limit) };
+}
+
+// ---------------------------------------------------------------- /api/keywords/site
+async function handleKeywordSite(env, url) {
+  let target = url.searchParams.get("target") || "";
+  const property = url.searchParams.get("property") || "vantagecircle";
+  const country = url.searchParams.get("country") || "us";
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "100", 10), 200);
+
+  if (!target) {
+    const cfg = PROPERTIES[property] || PROPERTIES.vantagecircle;
+    target = cfg.domain;
+  }
+
+  const locationCode = country === "us" ? 2840 : 2826;
+  const endpoint = "/dataforseo_labs/google/keywords_for_site/live";
+  const payload = [{ target, location_code: locationCode, language_code: "en", limit }];
+
+  const result = await dfsPost(env, endpoint, payload);
+  let items = [];
+  for (const r of result) {
+    for (const item of r.items || []) {
+      const normalized = normalizeDfsItem(item);
+      normalized.position = item.ranked_serp_element?.serp_item?.rank_group || null;
+      normalized.url = item.ranked_serp_element?.serp_item?.url || "";
+      items.push(normalized);
+    }
+  }
+
+  const seen = new Set();
+  items = items.filter((i) => {
+    if (seen.has(i.keyword)) return false;
+    seen.add(i.keyword);
+    return true;
+  });
+
+  return { target, property, country, items: items.slice(0, limit) };
+}
+
+// ---------------------------------------------------------------- /api/keywords/overview
+async function handleKeywordOverview(env, url) {
+  const keyword = url.searchParams.get("keyword") || "";
+  const country = url.searchParams.get("country") || "us";
+  if (!keyword) return jsonError("keyword is required", 400);
+
+  const locationCode = country === "us" ? 2840 : 2826;
+  const endpoint = "/keywords_data/google/search_volume/live";
+  const payload = [{ keywords: [keyword], location_code: locationCode, language_code: "en" }];
+
+  const result = await dfsPost(env, endpoint, payload);
+  let items = [];
+  for (const r of result) {
+    for (const item of r.items || []) {
+      for (const kw of item.keywords || []) {
+        items.push(normalizeDfsItem({ ...kw, keyword: kw.keyword || keyword }));
+      }
+    }
+  }
+
+  return { keyword, country, items };
+}
+
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v15:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v17:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
@@ -1939,6 +2103,9 @@ export default {
         else if (route === "content_authors") result = await handleContentAuthors(env, url);
         else if (route === "keywords") result = await handleKeywords(env, request, url);
         else if (route === "keyword_gaps") result = await handleKeywordGaps(env, url);
+        else if (route === "keywords/discover") result = await handleKeywordDiscover(env, url);
+        else if (route === "keywords/site") result = await handleKeywordSite(env, url);
+        else if (route === "keywords/overview") result = await handleKeywordOverview(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));

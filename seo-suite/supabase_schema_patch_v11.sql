@@ -1,6 +1,8 @@
 -- Patch v11: Keyword Research module — stored keyword opportunities + tracking.
 -- Run once in the Supabase SQL editor.
 
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE IF NOT EXISTS keywords (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   keyword TEXT NOT NULL,
