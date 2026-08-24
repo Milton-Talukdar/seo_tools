@@ -2040,22 +2040,10 @@ async function handleKeywordOverview(env, url) {
 
   const result = await dfsPost(env, endpoint, payload);
   let items = [];
-  // Try multiple response shapes: direct items, nested tasks, or item.keywords array.
-  for (const task of result || []) {
-    const candidates = [
-      task.items,
-      (task.result || []).flatMap((r) => r.items || []),
-      (task.tasks || []).flatMap((t) => (t.result || []).flatMap((r) => r.items || [])),
-    ];
-    for (const list of candidates) {
-      if (!list || !list.length) continue;
-      for (const item of list) {
-        const keywords = item.keywords || [item];
-        for (const kw of keywords) {
-          items.push(normalizeDfsItem({ ...kw, keyword: kw.keyword || keyword }));
-        }
-      }
-      break;
+  // keywords_data/search_volume returns items directly in the result array.
+  for (const item of result || []) {
+    if (item.keyword) {
+      items.push(normalizeDfsItem(item));
     }
   }
 
@@ -2068,33 +2056,6 @@ function cacheKey(request, route) {
   return `v17:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
-// ---------------------------------------------------------------- /api/debug/env
-async function handleDebugEnv(env) {
-  const login = env.DATAFORSEO_LOGIN || "";
-  const password = env.DATAFORSEO_PASSWORD || "";
-  function preview(s) {
-    if (!s) return "(empty)";
-    if (s.length <= 6) return s.slice(0, 1) + "..." + s.slice(-1);
-    return s.slice(0, 2) + "..." + s.slice(-2) + " (len " + s.length + ")";
-  }
-  return {
-    dataforseo_login_preview: preview(login),
-    dataforseo_password_length: password.length,
-    dataforseo_password_preview: preview(password),
-    has_dataforseo_login: !!login,
-    has_dataforseo_password: !!password,
-  };
-}
-
-// ---------------------------------------------------------------- /api/debug/overview
-async function handleDebugOverview(env, url) {
-  const keyword = url.searchParams.get("keyword") || "employee engagement";
-  const endpoint = "/keywords_data/google/search_volume/live";
-  const payload = [{ keywords: [keyword], location_code: 2840, language_code: "en" }];
-  const result = await dfsPost(env, endpoint, payload);
-  return { raw: result };
-}
-
 // ---------------------------------------------------------------------- router
 export default {
   async fetch(request, env, ctx) {
@@ -2103,9 +2064,6 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       try {
         const route = url.pathname.slice(5).replace(/\/$/, "") || "summary";
-        // Temporary debug routes — remove after fixing DataForSEO response parsing.
-        if (route === "debug/env") return Response.json(await handleDebugEnv(env));
-        if (route === "debug/overview") return Response.json(await handleDebugOverview(env, url));
         if (!CACHE_TTL[route]) return jsonError("Not found", 404);
 
         // X-Cache-Enabled makes it possible to tell from curl whether the
