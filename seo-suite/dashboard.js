@@ -34,7 +34,8 @@
       id: 'content', label: 'Content', icon: ICONS.content,
       groups: [
         { label: 'Maintenance', sections: [{ id: 'freshness', label: 'Freshness Queue', panel: 'freshness' }] },
-        { label: 'Quality', sections: [{ id: 'cannibalization', label: 'Cannibalization', panel: 'cannibalization' }] }
+        { label: 'Quality', sections: [{ id: 'cannibalization', label: 'Cannibalization', panel: 'cannibalization' }] },
+        { label: 'Engine', sections: [{ id: 'content-inventory', label: 'Inventory', panel: 'content-inventory' }] }
       ]
     },
     {
@@ -1991,6 +1992,219 @@
     }
   }
 
+  // ---------------------------------------------------------------- content inventory
+  function parseJsonList(v) {
+    try { return JSON.parse(v || '[]'); } catch (e) { return []; }
+  }
+
+  function daysAgo(iso) {
+    if (!iso) return null;
+    const then = new Date(iso);
+    if (isNaN(then)) return null;
+    return Math.floor((Date.now() - then.getTime()) / 86400000);
+  }
+
+  function statusChip(status) {
+    const cls = status === 'published' ? 'you' : (status === 'draft' ? 'none' : '');
+    return '<span class="chip ' + cls + '">' + esc(status || 'unknown') + '</span>';
+  }
+
+  async function loadContentInventory() {
+    const el = document.getElementById('panel-content-inventory');
+    try {
+      const data = await api('content_inventory');
+      const rows = data.rows || [];
+      const summary = data.summary || {};
+      if (!rows.length) {
+        el.innerHTML = '<h2>Content Inventory</h2><div class="card">No content inventory data yet. Run <code>python3 content_inventory.py</code> and apply <code>supabase_schema_patch_v8.sql</code>.</div>';
+        return;
+      }
+
+      const total = summary.total || rows.length;
+      const byType = summary.by_type || {};
+      const byLang = summary.by_lang || {};
+      const byStatus = summary.by_status || {};
+
+      const typeOpts = Object.keys(byType).sort().map(function (t) { return '<option value="' + esc(t) + '">' + esc(t) + ' (' + byType[t] + ')</option>'; }).join('');
+      const langOpts = Object.keys(byLang).sort().map(function (l) { return '<option value="' + esc(l) + '">' + esc(l) + ' (' + byLang[l] + ')</option>'; }).join('');
+      const statusOpts = Object.keys(byStatus).sort().map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + ' (' + byStatus[s] + ')</option>'; }).join('');
+
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      let stale = 0, avgWords = 0, totalWords = 0;
+      rows.forEach(function (r) {
+        const updated = r.updated_date ? new Date(r.updated_date) : null;
+        if (updated && updated < oneYearAgo) stale++;
+        totalWords += r.word_count || 0;
+      });
+      avgWords = rows.length ? Math.round(totalWords / rows.length) : 0;
+
+      const kpiHtml = '<div class="kpis">' +
+        '<div class="kpi"><div class="num">' + fmtNum(total) + '</div><div class="label">Total items</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(Object.keys(byType).length) + '</div><div class="label">Content types</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(stale) + '</div><div class="label">Stale (&gt;1yr)</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(avgWords) + '</div><div class="label">Avg words</div></div>' +
+        '</div>';
+
+      const tableRows = rows.map(function (r) {
+        const authors = parseJsonList(r.authors).join(', ');
+        const tags = parseJsonList(r.tags).map(function (t) { return '<span class="chip">' + esc(t) + '</span>'; }).join(' ');
+        const updatedAgo = daysAgo(r.updated_date);
+        const updatedText = r.updated_date ? esc(r.updated_date) + (updatedAgo != null ? ' <span class="sub">(' + updatedAgo + 'd)</span>' : '') : '—';
+        const search = [r.title, r.meta_title, r.meta_description, r.slug, r.url, r.excerpt, authors, parseJsonList(r.tags).join(' ')].filter(Boolean).join(' ').toLowerCase();
+        return '<tr data-search="' + esc(search) + '" data-type="' + esc(r.content_type) + '" data-lang="' + esc(r.lang) + '" data-status="' + esc(r.status) + '" data-authors="' + esc(authors.toLowerCase()) + '" data-tags="' + esc(parseJsonList(r.tags).join(' ').toLowerCase()) + '" data-words="' + esc(String(r.word_count || 0)) + '" data-updated="' + esc(String(r.updated_date || '')) + '">' +
+          '<td><a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc((r.title || r.slug)) + '</a><br><span class="sub">' + esc(r.url.replace(/^https?:\/\//, '').replace(/\/$/, '').slice(0, 55)) + '</span></td>' +
+          '<td>' + esc(r.content_type) + '</td>' +
+          '<td>' + esc(r.lang) + '</td>' +
+          '<td class="sub">' + (authors ? esc(authors) : '—') + '</td>' +
+          '<td>' + (tags || '<span class="sub">—</span>') + '</td>' +
+          '<td class="num">' + fmtNum(r.word_count || 0) + '</td>' +
+          '<td class="num"><span title="internal / external">' + fmtNum(r.internal_links || 0) + ' / ' + fmtNum(r.external_links || 0) + '</span></td>' +
+          '<td>' + (r.published_date ? esc(r.published_date) : '—') + '</td>' +
+          '<td>' + updatedText + '</td>' +
+          '<td>' + statusChip(r.status) + '</td></tr>';
+      }).join('');
+
+      const filterHtml = '<div class="table-tools no-print ci-tools">' +
+        '<input class="ci-search" type="search" placeholder="Search title, URL, tags…">' +
+        '<select class="ci-type"><option value="">All types</option>' + typeOpts + '</select>' +
+        '<select class="ci-lang"><option value="">All languages</option>' + langOpts + '</select>' +
+        '<select class="ci-status"><option value="">All statuses</option>' + statusOpts + '</select>' +
+        '<input class="ci-author" type="search" placeholder="Author…">' +
+        '<input class="ci-tag" type="search" placeholder="Tag…">' +
+        '<button class="ci-export" type="button">Export CSV</button>' +
+        '<span class="ci-count sub">' + fmtNum(rows.length) + ' items</span></div>';
+
+      const tableHtml = '<div class="card">' + filterHtml +
+        '<table class="ci-table"><thead><tr>' +
+        '<th class="sortable" data-sort="title">Title <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="type">Type <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="lang">Lang <span class="arrow"></span></th>' +
+        '<th>Authors</th>' +
+        '<th>Tags</th>' +
+        '<th class="sortable" data-sort="words">Words <span class="arrow"></span></th>' +
+        '<th>Links</th>' +
+        '<th class="sortable" data-sort="published">Published <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="updated">Updated <span class="arrow"></span></th>' +
+        '<th>Status</th>' +
+        '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+
+      el.innerHTML = '<h2>Content Inventory</h2>' + kpiHtml + tableHtml;
+      initContentInventoryInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  function initContentInventoryInteractions() {
+    const wrap = document.getElementById('panel-content-inventory');
+    if (!wrap) return;
+    const search = wrap.querySelector('.ci-search');
+    const typeSel = wrap.querySelector('.ci-type');
+    const langSel = wrap.querySelector('.ci-lang');
+    const statusSel = wrap.querySelector('.ci-status');
+    const authorIn = wrap.querySelector('.ci-author');
+    const tagIn = wrap.querySelector('.ci-tag');
+    const tbody = wrap.querySelector('tbody');
+    const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    const count = wrap.querySelector('.ci-count');
+    const ths = wrap.querySelectorAll('th.sortable');
+    let sortKey = 'updated', sortDir = -1;
+
+    function applyFilter() {
+      const q = search ? search.value.toLowerCase() : '';
+      const t = typeSel ? typeSel.value : '';
+      const l = langSel ? langSel.value : '';
+      const s = statusSel ? statusSel.value : '';
+      const a = authorIn ? authorIn.value.toLowerCase() : '';
+      const tg = tagIn ? tagIn.value.toLowerCase() : '';
+      let n = 0;
+      rows.forEach(function (r) {
+        let ok = true;
+        if (q && r.getAttribute('data-search').indexOf(q) === -1) ok = false;
+        if (ok && t && r.getAttribute('data-type') !== t) ok = false;
+        if (ok && l && r.getAttribute('data-lang') !== l) ok = false;
+        if (ok && s && r.getAttribute('data-status') !== s) ok = false;
+        if (ok && a && r.getAttribute('data-authors').indexOf(a) === -1) ok = false;
+        if (ok && tg && r.getAttribute('data-tags').indexOf(tg) === -1) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' items';
+    }
+
+    function keyVal(r, k) {
+      if (k === 'title') return r.cells[0].textContent.toLowerCase();
+      if (k === 'type') return r.getAttribute('data-type');
+      if (k === 'lang') return r.getAttribute('data-lang');
+      if (k === 'words') return parseInt(r.getAttribute('data-words') || '0', 10);
+      if (k === 'published' || k === 'updated') return r.getAttribute('data-' + k) || '';
+      return '';
+    }
+
+    function cmp(a, b) {
+      const va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+      if (sortKey === 'words') {
+        return (va - vb) * sortDir;
+      }
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    }
+
+    function applySort() {
+      rows.sort(cmp);
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      ths.forEach(function (th) {
+        const arr = th.querySelector('.arrow');
+        if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+      });
+    }
+
+    ths.forEach(function (th) {
+      th.addEventListener('click', function () {
+        const k = th.getAttribute('data-sort');
+        if (k === sortKey) { sortDir = -sortDir; }
+        else { sortKey = k; sortDir = (k === 'title' || k === 'type' || k === 'lang' || k === 'published' || k === 'updated') ? 1 : -1; }
+        applySort();
+      });
+    });
+
+    [search, typeSel, langSel, statusSel, authorIn, tagIn].forEach(function (el) {
+      if (el) el.addEventListener('input', applyFilter);
+    });
+
+    const exportBtn = wrap.querySelector('.ci-export');
+    if (exportBtn) exportBtn.addEventListener('click', function () {
+      const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+      const visible = rows.filter(function (r) { return r.style.display !== 'none'; });
+      const csv = ['title,type,lang,authors,tags,words,internal_links,external_links,published,updated,status,url'].concat(visible.map(function (r) {
+        return [
+          q(r.cells[0].querySelector('a') ? r.cells[0].querySelector('a').textContent : r.cells[0].textContent),
+          q(r.cells[1].textContent),
+          q(r.cells[2].textContent),
+          q(r.cells[3].textContent),
+          q(r.getAttribute('data-tags')),
+          r.getAttribute('data-words'),
+          q(r.cells[6].textContent.split('/')[0].trim()),
+          q(r.cells[6].textContent.split('/')[1].trim()),
+          q(r.cells[7].textContent),
+          q(r.getAttribute('data-updated')),
+          q(r.cells[9].textContent),
+          q(r.cells[0].querySelector('a') ? r.cells[0].querySelector('a').href : '')
+        ].join(',');
+      })).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = 'content-inventory-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    applySort();
+    applyFilter();
+  }
+
   // ---------------------------------------------------------------- cannibalization
   async function loadCannibalization() {
     const el = document.getElementById('panel-cannibalization');
@@ -2037,6 +2251,7 @@
       loadBacklinks(),
       loadFreshness(),
       loadCannibalization(),
+      loadContentInventory(),
       loadLLM(),
       loadLlmPrompts(),
       loadGscLlmQueries(),
