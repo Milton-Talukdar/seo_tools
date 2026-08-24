@@ -630,6 +630,7 @@ const CACHE_TTL = {
   content_inventory: 1800,
   content_pipeline: 300,
   content_clusters: 1800,
+  content_performance: 1800,
 };
 
 function cacheEnabled(env) {
@@ -1242,6 +1243,139 @@ async function handleContentClusters(env, url) {
   return { clusters: Object.values(clusterMap), inventory };
 }
 
+// ---------------------------------------------------------------- /api/content_performance
+async function handleContentPerformance(env, url) {
+  const property = url.searchParams.get("property") || "all";
+  const clusterFilter = url.searchParams.get("cluster") || "";
+  const contentType = url.searchParams.get("type") || "all";
+  const minClicks = parseInt(url.searchParams.get("min_clicks") || "0", 10);
+
+  // 1. inventory
+  let inventory = [];
+  try {
+    inventory = await sbFetchAll(env, "/content_inventory?select=*&order=updated_date.desc&limit=5000");
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.includes("content_inventory") && (msg.includes("does not exist") || msg.includes("Not found"))) {
+      return { rows: [], summary: {} };
+    }
+    throw e;
+  }
+
+  // 2. latest GSC page stats
+  let gscStats = [];
+  try {
+    gscStats = await sbFetchAll(env, "/gsc_page_stats?select=*&order=day.desc&limit=5000");
+  } catch (e) {
+    gscStats = [];
+  }
+  const latestGscDay = gscStats.length ? gscStats[0].day : null;
+  const gscByPage = {};
+  gscStats.forEach((r) => {
+    if (r.day !== latestGscDay) return;
+    gscByPage[r.page] = { clicks: r.clicks || 0, impressions: r.impressions || 0, ctr: r.ctr || 0, position: r.position || 0 };
+  });
+
+  // 3. latest rank snapshots (best position per URL)
+  let ranks = [];
+  try {
+    ranks = await sbFetchAll(env, "/rank_snapshots?select=url,position,keyword,day&order=day.desc&limit=10000");
+  } catch (e) {
+    ranks = [];
+  }
+  const latestRankDay = ranks.length ? ranks[0].day : null;
+  const rankByUrl = {};
+  ranks.forEach((r) => {
+    if (r.day !== latestRankDay) return;
+    if (!rankByUrl[r.url] || (r.position || 999) < (rankByUrl[r.url].position || 999)) {
+      rankByUrl[r.url] = { position: r.position, keyword: r.keyword };
+    }
+  });
+
+  // 4. clusters
+  let clusters = [];
+  try {
+    clusters = await sbFetchAll(env, "/content_clusters?select=*&order=cluster.asc");
+  } catch (e) {
+    clusters = [];
+  }
+  const clusterKeywords = {};
+  clusters.forEach((c) => {
+    const kws = (c.target_keywords || "").split(",").map((k) => k.trim().toLowerCase()).filter(Boolean);
+    clusterKeywords[c.cluster] = { property: c.property, keywords: kws };
+  });
+
+  function assignCluster(item) {
+    const tags = [];
+    try {
+      tags.push(...JSON.parse(item.tags || "[]").map((t) => String(t).toLowerCase()));
+    } catch (e) {}
+    const title = (item.title || "").toLowerCase();
+    for (const [name, meta] of Object.entries(clusterKeywords)) {
+      if (meta.property !== item.property) continue;
+      const match = meta.keywords.some((k) => tags.includes(k) || title.includes(k));
+      if (match) return name;
+    }
+    return null;
+  }
+
+  const rows = inventory.map((item) => {
+    const gsc = gscByPage[item.url] || { clicks: 0, impressions: 0, ctr: 0, position: 0 };
+    const rank = rankByUrl[item.url] || { position: null, keyword: null };
+    const cluster = assignCluster(item);
+
+    let action = "monitor";
+    let reason = "";
+    if (gsc.clicks === 0 && gsc.impressions > 100) {
+      action = "optimize";
+      reason = "impressions but no clicks";
+    } else if (rank.position && rank.position > 20 && gsc.clicks > 0) {
+      action = "improve";
+      reason = "page 3+ with traffic";
+    } else if (gsc.clicks > 50 && rank.position && rank.position <= 10) {
+      action = "expand";
+      reason = "strong performer";
+    } else if (gsc.impressions === 0 && !rank.position) {
+      action = "audit";
+      reason = "no search visibility";
+    }
+
+    return {
+      ...item,
+      cluster,
+      clicks: gsc.clicks,
+      impressions: gsc.impressions,
+      ctr: gsc.ctr,
+      gsc_position: gsc.position,
+      rank_position: rank.position,
+      rank_keyword: rank.keyword,
+      action,
+      reason,
+    };
+  });
+
+  const filtered = rows.filter((r) => {
+    if (property !== "all" && r.property !== property) return false;
+    if (contentType !== "all" && r.content_type !== contentType) return false;
+    if (clusterFilter && r.cluster !== clusterFilter) return false;
+    if (minClicks && (r.clicks || 0) < minClicks) return false;
+    return true;
+  });
+
+  const summary = {
+    total: filtered.length,
+    total_clicks: filtered.reduce((s, r) => s + (r.clicks || 0), 0),
+    total_impressions: filtered.reduce((s, r) => s + (r.impressions || 0), 0),
+    avg_position: 0,
+    with_traffic: filtered.filter((r) => (r.clicks || 0) > 0).length,
+    without_visibility: filtered.filter((r) => (r.impressions || 0) === 0 && !r.rank_position).length,
+  };
+  const posRows = filtered.filter((r) => r.rank_position);
+  summary.avg_position = posRows.length ? Math.round(posRows.reduce((s, r) => s + r.rank_position, 0) / posRows.length * 10) / 10 : 0;
+
+  return { rows: filtered, summary, latest_gsc_day: latestGscDay, latest_rank_day: latestRankDay };
+}
+
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
@@ -1288,6 +1422,7 @@ export default {
         else if (route === "content_inventory") result = await handleContentInventory(env, url);
         else if (route === "content_pipeline") result = await handleContentPipeline(env, request, url);
         else if (route === "content_clusters") result = await handleContentClusters(env, url);
+        else if (route === "content_performance") result = await handleContentPerformance(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));

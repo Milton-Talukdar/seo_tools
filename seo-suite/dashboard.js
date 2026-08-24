@@ -38,7 +38,8 @@
         { label: 'Engine', sections: [
           { id: 'content-inventory', label: 'Inventory', panel: 'content-inventory' },
           { id: 'content-pipeline', label: 'Pipeline', panel: 'content-pipeline' },
-          { id: 'content-clusters', label: 'Topic Clusters', panel: 'content-clusters' }
+          { id: 'content-clusters', label: 'Topic Clusters', panel: 'content-clusters' },
+          { id: 'content-performance', label: 'Performance', panel: 'content-performance' }
         ] }
       ]
     },
@@ -2473,6 +2474,199 @@
     if (search) search.addEventListener('input', filter);
   }
 
+  // ---------------------------------------------------------------- content performance
+  async function loadContentPerformance() {
+    const el = document.getElementById('panel-content-performance');
+    try {
+      const data = await api('content_performance');
+      const rows = data.rows || [];
+      const summary = data.summary || {};
+      const props = ['vantagecircle', 'vantagefit'];
+      const currentProp = 'vantagecircle';
+
+      const propOpts = props.map(function (p) {
+        return '<option value="' + esc(p) + '"' + (p === currentProp ? ' selected' : '') + '>' + esc(PROPERTIES[p].label) + '</option>';
+      }).join('');
+
+      const clusterSet = {};
+      rows.forEach(function (r) { if (r.cluster) clusterSet[r.cluster] = true; });
+      const clusterOpts = Object.keys(clusterSet).sort().map(function (c) {
+        return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
+      }).join('');
+
+      const typeSet = {};
+      rows.forEach(function (r) { if (r.content_type) typeSet[r.content_type] = true; });
+      const typeOpts = Object.keys(typeSet).sort().map(function (t) {
+        return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+      }).join('');
+
+      const kpiHtml = '<div class="kpis">' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.total || rows.length) + '</div><div class="label">Pages</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.total_clicks || 0) + '</div><div class="label">Clicks (28d)</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.total_impressions || 0) + '</div><div class="label">Impressions</div></div>' +
+        '<div class="kpi"><div class="num">' + (summary.avg_position || 0) + '</div><div class="label">Avg position</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(summary.with_traffic || 0) + '</div><div class="label">With traffic</div></div>' +
+        '</div>';
+
+      const tableRows = rows.map(function (r) {
+        const actionClass = { monitor: '', optimize: 'amber', improve: 'you', expand: 'you', audit: 'rose' }[r.action] || '';
+        const cluster = r.cluster ? '<span class="chip">' + esc(r.cluster) + '</span>' : '<span class="sub">—</span>';
+        const rank = r.rank_position ? '<span class="pos-chip ' + (r.rank_position <= 10 ? 'up' : (r.rank_position <= 30 ? 'flat' : 'down')) + '">' + esc(String(r.rank_position)) + '</span>' : '—';
+        const gscPos = r.gsc_position ? esc(String(Math.round(r.gsc_position * 10) / 10)) : '—';
+        const ctr = r.ctr ? (r.ctr * 100).toFixed(2) + '%' : '—';
+        const search = [r.title, r.url, r.cluster, r.content_type, r.action, r.reason].filter(Boolean).join(' ').toLowerCase();
+        return '<tr data-search="' + esc(search) + '" data-property="' + esc(r.property) + '" data-type="' + esc(r.content_type) + '" data-cluster="' + esc(r.cluster || '') + '" data-clicks="' + (r.clicks || 0) + '" data-impressions="' + (r.impressions || 0) + '">' +
+          '<td><a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.title || r.slug) + '</a><br><span class="sub">' + esc(r.url.replace(/^https?:\/\//, '').replace(/\/$/, '').slice(0, 50)) + '</span></td>' +
+          '<td>' + esc(r.content_type) + '</td>' +
+          '<td>' + cluster + '</td>' +
+          '<td class="num">' + fmtNum(r.clicks || 0) + '</td>' +
+          '<td class="num">' + fmtNum(r.impressions || 0) + '</td>' +
+          '<td class="num">' + ctr + '</td>' +
+          '<td class="num">' + gscPos + '</td>' +
+          '<td class="num">' + rank + '</td>' +
+          '<td>' + (r.rank_keyword ? esc(r.rank_keyword) : '—') + '</td>' +
+          '<td><span class="chip ' + actionClass + '">' + esc(r.action) + '</span> <span class="sub">' + esc(r.reason) + '</span></td>' +
+          '</tr>';
+      }).join('');
+
+      const filterHtml = '<div class="table-tools no-print cpf-tools">' +
+        '<select class="cpf-property"><option value="all">All properties</option>' + propOpts + '</select>' +
+        '<select class="cpf-type"><option value="all">All types</option>' + typeOpts + '</select>' +
+        '<select class="cpf-cluster"><option value="">All clusters</option>' + clusterOpts + '</select>' +
+        '<input class="cpf-search" type="search" placeholder="Search title, URL, keyword…">' +
+        '<button class="cpf-export" type="button">Export CSV</button>' +
+        '<span class="cpf-count sub">' + fmtNum(rows.length) + ' pages</span></div>';
+
+      const tableHtml = '<div class="card">' + filterHtml +
+        '<table class="cpf-table"><thead><tr>' +
+        '<th class="sortable" data-sort="title">Title <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="type">Type <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="cluster">Cluster <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="clicks">Clicks <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="impressions">Impr. <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="ctr">CTR <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="gsc_position">GSC pos <span class="arrow"></span></th>' +
+        '<th class="sortable" data-sort="rank_position">Rank <span class="arrow"></span></th>' +
+        '<th>Tracked kw</th>' +
+        '<th>Action</th>' +
+        '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+
+      const note = (data.latest_gsc_day || data.latest_rank_day) ?
+        '<div class="sub" style="margin-top:8px">Latest data: GSC ' + esc(data.latest_gsc_day || '—') + ' | Rank ' + esc(data.latest_rank_day || '—') + '</div>' : '';
+
+      el.innerHTML = '<h2>Content Performance</h2>' + kpiHtml + tableHtml + note;
+      initContentPerformanceInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  function initContentPerformanceInteractions() {
+    const wrap = document.getElementById('panel-content-performance');
+    if (!wrap) return;
+    const search = wrap.querySelector('.cpf-search');
+    const propSel = wrap.querySelector('.cpf-property');
+    const typeSel = wrap.querySelector('.cpf-type');
+    const clusterSel = wrap.querySelector('.cpf-cluster');
+    const tbody = wrap.querySelector('tbody');
+    const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    const count = wrap.querySelector('.cpf-count');
+    const ths = wrap.querySelectorAll('th.sortable');
+    let sortKey = 'clicks', sortDir = -1;
+
+    function applyFilter() {
+      const q = search ? search.value.toLowerCase() : '';
+      const p = propSel ? propSel.value : 'all';
+      const t = typeSel ? typeSel.value : 'all';
+      const c = clusterSel ? clusterSel.value : '';
+      let n = 0;
+      rows.forEach(function (r) {
+        let ok = true;
+        if (q && r.getAttribute('data-search').indexOf(q) === -1) ok = false;
+        if (ok && p !== 'all' && r.getAttribute('data-property') !== p) ok = false;
+        if (ok && t !== 'all' && r.getAttribute('data-type') !== t) ok = false;
+        if (ok && c && r.getAttribute('data-cluster') !== c) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' pages';
+    }
+
+    function keyVal(r, k) {
+      if (k === 'title') return r.cells[0].textContent.toLowerCase();
+      if (k === 'type') return r.getAttribute('data-type');
+      if (k === 'cluster') return r.getAttribute('data-cluster');
+      if (k === 'clicks' || k === 'impressions') return parseInt(r.getAttribute('data-' + k) || '0', 10);
+      if (k === 'ctr' || k === 'gsc_position' || k === 'rank_position') {
+        const txt = r.cells[k === 'ctr' ? 5 : (k === 'gsc_position' ? 6 : 7)].textContent.replace('%', '').trim();
+        return txt === '—' ? 0 : parseFloat(txt);
+      }
+      return '';
+    }
+
+    function cmp(a, b) {
+      const va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+      if (sortKey === 'clicks' || sortKey === 'impressions' || sortKey === 'ctr' || sortKey === 'gsc_position' || sortKey === 'rank_position') {
+        return (va - vb) * sortDir;
+      }
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    }
+
+    function applySort() {
+      rows.sort(cmp);
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      ths.forEach(function (th) {
+        const arr = th.querySelector('.arrow');
+        if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+      });
+    }
+
+    ths.forEach(function (th) {
+      th.addEventListener('click', function () {
+        const k = th.getAttribute('data-sort');
+        if (k === sortKey) { sortDir = -sortDir; }
+        else { sortKey = k; sortDir = (k === 'title' || k === 'type' || k === 'cluster') ? 1 : -1; }
+        applySort();
+      });
+    });
+
+    [search, propSel, typeSel, clusterSel].forEach(function (el) {
+      if (el) el.addEventListener('input', applyFilter);
+    });
+
+    const exportBtn = wrap.querySelector('.cpf-export');
+    if (exportBtn) exportBtn.addEventListener('click', function () {
+      const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+      const visible = rows.filter(function (r) { return r.style.display !== 'none'; });
+      const csv = ['title,url,type,cluster,clicks,impressions,ctr,gsc_position,rank_position,rank_keyword,action,reason'].concat(visible.map(function (r) {
+        return [
+          q(r.cells[0].querySelector('a') ? r.cells[0].querySelector('a').textContent : r.cells[0].textContent),
+          q(r.cells[0].querySelector('a') ? r.cells[0].querySelector('a').href : ''),
+          q(r.cells[1].textContent),
+          q(r.cells[2].textContent),
+          r.getAttribute('data-clicks'),
+          r.getAttribute('data-impressions'),
+          q(r.cells[5].textContent),
+          q(r.cells[6].textContent),
+          q(r.cells[7].textContent),
+          q(r.cells[8].textContent),
+          q(r.cells[9].querySelector('.chip') ? r.cells[9].querySelector('.chip').textContent : ''),
+          q(r.cells[9].querySelector('.sub') ? r.cells[9].querySelector('.sub').textContent : '')
+        ].join(',');
+      })).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = 'content-performance-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    applySort();
+    applyFilter();
+  }
+
   // ---------------------------------------------------------------- boot
   document.addEventListener('DOMContentLoaded', function () {
     initNavigation();
@@ -2485,6 +2679,7 @@
       loadContentInventory(),
       loadContentPipeline(),
       loadContentClusters(),
+      loadContentPerformance(),
       loadLLM(),
       loadLlmPrompts(),
       loadGscLlmQueries(),

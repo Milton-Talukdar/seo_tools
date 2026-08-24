@@ -434,3 +434,12 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .cp-board { flex-direction: column; }
   .cp-col { flex: 1 1 auto; width: 100%; }
 }
+
+/* ---- content engine performance ---- */
+.cpf-table td { vertical-align: middle; }
+.cpf-table td:first-child { max-width: 280px; }
+.cpf-table td:first-child a { font-weight: 600; }
+.cpf-tools select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; font-size: 13px; font-family: inherit; background: #f8fafc; color: var(--ink); }
+.cpf-tools input[type="search"] { flex: 1; min-width: 120px; max-width: 260px; }
+.cpf-export { margin-left: auto; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; font-family: inherit; }
+.cpf-export:hover { background: #eef1f6; }
