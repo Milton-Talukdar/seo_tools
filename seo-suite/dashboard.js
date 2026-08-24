@@ -35,7 +35,11 @@
       groups: [
         { label: 'Maintenance', sections: [{ id: 'freshness', label: 'Freshness Queue', panel: 'freshness' }] },
         { label: 'Quality', sections: [{ id: 'cannibalization', label: 'Cannibalization', panel: 'cannibalization' }] },
-        { label: 'Engine', sections: [{ id: 'content-inventory', label: 'Inventory', panel: 'content-inventory' }] }
+        { label: 'Engine', sections: [
+          { id: 'content-inventory', label: 'Inventory', panel: 'content-inventory' },
+          { id: 'content-pipeline', label: 'Pipeline', panel: 'content-pipeline' },
+          { id: 'content-clusters', label: 'Topic Clusters', panel: 'content-clusters' }
+        ] }
       ]
     },
     {
@@ -2255,6 +2259,220 @@
     }
   }
 
+  // ---------------------------------------------------------------- content pipeline
+  const PIPELINE_STAGES = [
+    { id: 'idea', label: 'Idea' },
+    { id: 'brief', label: 'Brief' },
+    { id: 'draft', label: 'Draft' },
+    { id: 'review', label: 'Review' },
+    { id: 'scheduled', label: 'Scheduled' },
+    { id: 'published', label: 'Published' },
+    { id: 'refresh', label: 'Refresh' },
+    { id: 'prune', label: 'Prune' }
+  ];
+  const PIPELINE_PROPS = [
+    { id: 'vantagecircle', label: 'Vantage Circle' },
+    { id: 'vantagefit', label: 'Vantage Fit' }
+  ];
+
+  function pipelineStageChip(stage) {
+    const colors = {
+      idea: '#dbeafe', brief: '#fef3c7', draft: '#e0e7ff', review: '#fce7f3',
+      scheduled: '#d1fae5', published: '#059669', refresh: '#fed7aa', prune: '#fecaca'
+    };
+    const text = { idea: '#1e40af', brief: '#92400e', draft: '#3730a3', review: '#9d174d',
+                   scheduled: '#047857', published: '#fff', refresh: '#9a3412', prune: '#991b1b' };
+    const bg = colors[stage] || '#f3f4f6';
+    const fg = text[stage] || '#374151';
+    return '<span class="chip" style="background:' + bg + ';color:' + fg + '">' + esc(stage) + '</span>';
+  }
+
+  async function loadContentPipeline() {
+    const el = document.getElementById('panel-content-pipeline');
+    try {
+      const data = await api('content_pipeline');
+      const rows = data.rows || [];
+      const stages = data.stages || PIPELINE_STAGES.map(function (s) { return s.id; });
+      const byStage = data.by_stage || {};
+      const currentProp = 'vantagecircle';
+
+      const propOpts = PIPELINE_PROPS.map(function (p) {
+        return '<option value="' + esc(p.id) + '"' + (p.id === currentProp ? ' selected' : '') + '>' + esc(p.label) + '</option>';
+      }).join('');
+
+      const stageOpts = PIPELINE_STAGES.map(function (s) {
+        return '<option value="' + esc(s.id) + '">' + esc(s.label) + '</option>';
+      }).join('');
+
+      const typeOpts = ['posts', 'pages', 'casestudy', 'comparisons', 'glossaries', 'resources', 'webinars', 'reports', 'podcasts'].map(function (t) {
+        return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+      }).join('');
+
+      function cardHtml(r) {
+        const due = r.due_date ? '<div class="cp-due">📅 ' + esc(r.due_date) + '</div>' : '';
+        const owner = r.owner ? '<div class="cp-owner">👤 ' + esc(r.owner) + '</div>' : '';
+        const kw = r.target_keyword ? '<div class="cp-kw">🎯 ' + esc(r.target_keyword) + '</div>' : '';
+        const cluster = r.cluster ? '<div class="cp-cluster">🏷️ ' + esc(r.cluster) + '</div>' : '';
+        return '<div class="cp-card" data-id="' + esc(r.id) + '" data-property="' + esc(r.property || 'vantagecircle') + '" data-stage="' + esc(r.stage) + '" draggable="true">' +
+          '<div class="cp-title">' + esc(r.title) + '</div>' +
+          (r.url ? '<a href="' + esc(r.url) + '" target="_blank" class="sub" style="font-size:11px">' + esc(r.url.replace(/^https?:\/\//, '').slice(0, 40)) + '</a>' : '') +
+          '<div class="cp-meta">' + owner + due + kw + cluster + '</div>' +
+          '</div>';
+      }
+
+      const columnsHtml = PIPELINE_STAGES.map(function (s) {
+        const items = (byStage[s.id] || []).filter(function (r) { return r.property === currentProp; });
+        return '<div class="cp-col" data-stage="' + esc(s.id) + '">' +
+          '<div class="cp-col-head">' + esc(s.label) + ' <span class="cp-count">' + items.length + '</span></div>' +
+          '<div class="cp-cards">' + items.map(cardHtml).join('') + '</div>' +
+          '</div>';
+      }).join('');
+
+      const formHtml = '<details class="cp-add no-print"><summary>Add pipeline item</summary>' +
+        '<form class="cp-form">' +
+        '<input type="text" name="title" placeholder="Title *" required>' +
+        '<select name="property">' + propOpts + '</select>' +
+        '<select name="content_type"><option value="">Type</option>' + typeOpts + '</select>' +
+        '<select name="stage">' + stageOpts + '</select>' +
+        '<input type="text" name="owner" placeholder="Owner">' +
+        '<input type="date" name="due_date">' +
+        '<input type="text" name="target_keyword" placeholder="Target keyword">' +
+        '<input type="text" name="cluster" placeholder="Cluster">' +
+        '<textarea name="notes" placeholder="Notes" rows="2"></textarea>' +
+        '<button type="submit">Add</button>' +
+        '</form></details>';
+
+      const filterHtml = '<div class="table-tools no-print">' +
+        '<select class="cp-property"><option value="all">All properties</option>' + propOpts + '</select>' +
+        '<input class="cp-search" type="search" placeholder="Search pipeline…">' +
+        '<span class="cp-total sub">' + rows.length + ' items</span></div>';
+
+      el.innerHTML = '<h2>Content Pipeline</h2>' + filterHtml + formHtml +
+        '<div class="card cp-board">' + columnsHtml + '</div>';
+      initContentPipelineInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  function initContentPipelineInteractions() {
+    const wrap = document.getElementById('panel-content-pipeline');
+    if (!wrap) return;
+    const propSel = wrap.querySelector('.cp-property');
+    const search = wrap.querySelector('.cp-search');
+    const form = wrap.querySelector('.cp-form');
+    const cols = Array.prototype.slice.call(wrap.querySelectorAll('.cp-col'));
+
+    function filter() {
+      const p = propSel ? propSel.value : 'all';
+      const q = search ? search.value.toLowerCase() : '';
+      cols.forEach(function (col) {
+        const cards = Array.prototype.slice.call(col.querySelectorAll('.cp-card'));
+        let shown = 0;
+        cards.forEach(function (card) {
+          const ok = (p === 'all' || card.getAttribute('data-property') === p) &&
+                     (!q || card.textContent.toLowerCase().indexOf(q) > -1);
+          card.style.display = ok ? '' : 'none';
+          if (ok) shown++;
+        });
+        col.querySelector('.cp-count').textContent = shown;
+      });
+    }
+
+    if (propSel) propSel.addEventListener('change', filter);
+    if (search) search.addEventListener('input', filter);
+
+    if (form) {
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const fd = new FormData(form);
+        const body = {};
+        ['title', 'property', 'content_type', 'stage', 'owner', 'due_date', 'target_keyword', 'cluster', 'notes'].forEach(function (k) {
+          const v = fd.get(k);
+          if (v) body[k] = v;
+        });
+        if (!body.property) body.property = 'vantagecircle';
+        try {
+          await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          form.reset();
+          loadContentPipeline();
+        } catch (err) {
+          alert('Save failed: ' + err.message);
+        }
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------- content clusters
+  async function loadContentClusters() {
+    const el = document.getElementById('panel-content-clusters');
+    try {
+      const data = await api('content_clusters');
+      const clusters = data.clusters || [];
+      const currentProp = 'vantagecircle';
+
+      const propOpts = PIPELINE_PROPS.map(function (p) {
+        return '<option value="' + esc(p.id) + '"' + (p.id === currentProp ? ' selected' : '') + '>' + esc(p.label) + '</option>';
+      }).join('');
+
+      const totalItems = clusters.reduce(function (sum, c) { return sum + (c.items || []).length; }, 0);
+      const orphanCount = (data.inventory || []).length - totalItems;
+
+      const kpiHtml = '<div class="kpis">' +
+        '<div class="kpi"><div class="num">' + fmtNum(clusters.length) + '</div><div class="label">Clusters</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(totalItems) + '</div><div class="label">Clustered items</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(Math.max(0, orphanCount)) + '</div><div class="label">Orphan items</div></div>' +
+        '</div>';
+
+      const listHtml = clusters.filter(function (c) { return c.property === currentProp; }).map(function (c) {
+        const items = c.items || [];
+        const kws = (c.target_keywords || '').split(',').map(function (k) { return k.trim(); }).filter(Boolean).map(function (k) {
+          return '<span class="chip">' + esc(k) + '</span>';
+        }).join('');
+        const itemList = items.slice(0, 5).map(function (i) {
+          return '<li><a href="' + esc(i.url) + '" target="_blank">' + esc(i.title || i.url) + '</a> <span class="sub">(' + esc(i.content_type) + ')</span></li>';
+        }).join('');
+        const more = items.length > 5 ? '<li class="sub">… and ' + (items.length - 5) + ' more</li>' : '';
+        return '<div class="cc-card" data-property="' + esc(c.property) + '">' +
+          '<h4>' + esc(c.cluster) + ' <span class="cc-count">' + items.length + ' items</span></h4>' +
+          (c.pillar_url ? '<div class="sub" style="margin-bottom:8px">Pillar: <a href="' + esc(c.pillar_url) + '" target="_blank">' + esc(c.pillar_url) + '</a></div>' : '') +
+          '<div style="margin-bottom:8px">' + (kws || '<span class="sub">No keywords</span>') + '</div>' +
+          '<ul class="cc-items">' + itemList + more + '</ul>' +
+          '</div>';
+      }).join('');
+
+      const filterHtml = '<div class="table-tools no-print">' +
+        '<select class="cc-property"><option value="all">All properties</option>' + propOpts + '</select>' +
+        '<input class="cc-search" type="search" placeholder="Search clusters…">' +
+        '</div>';
+
+      el.innerHTML = '<h2>Topic Clusters</h2>' + kpiHtml + filterHtml +
+        '<div class="card cc-grid">' + (listHtml || '<p class="sub">No clusters yet. Add them in Supabase <code>content_clusters</code> table.</p>') + '</div>';
+      initContentClusterInteractions();
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  function initContentClusterInteractions() {
+    const wrap = document.getElementById('panel-content-clusters');
+    if (!wrap) return;
+    const propSel = wrap.querySelector('.cc-property');
+    const search = wrap.querySelector('.cc-search');
+    const cards = Array.prototype.slice.call(wrap.querySelectorAll('.cc-card'));
+    function filter() {
+      const p = propSel ? propSel.value : 'all';
+      const q = search ? search.value.toLowerCase() : '';
+      cards.forEach(function (c) {
+        const ok = (p === 'all' || c.getAttribute('data-property') === p) &&
+                   (!q || c.textContent.toLowerCase().indexOf(q) > -1);
+        c.style.display = ok ? '' : 'none';
+      });
+    }
+    if (propSel) propSel.addEventListener('change', filter);
+    if (search) search.addEventListener('input', filter);
+  }
+
   // ---------------------------------------------------------------- boot
   document.addEventListener('DOMContentLoaded', function () {
     initNavigation();
@@ -2265,6 +2483,8 @@
       loadFreshness(),
       loadCannibalization(),
       loadContentInventory(),
+      loadContentPipeline(),
+      loadContentClusters(),
       loadLLM(),
       loadLlmPrompts(),
       loadGscLlmQueries(),

@@ -628,6 +628,8 @@ const CACHE_TTL = {
   llm_prompts: 1800,
   gsc_llm_queries: 1800,
   content_inventory: 1800,
+  content_pipeline: 300,
+  content_clusters: 1800,
 };
 
 function cacheEnabled(env) {
@@ -1142,6 +1144,104 @@ async function handleContentInventory(env, url) {
   }
 }
 
+// ---------------------------------------------------------------- /api/content_pipeline
+async function handleContentPipeline(env, request, url) {
+  if (request.method === "POST") {
+    let body;
+    try {
+      body = await request.json();
+    } catch (e) {
+      return jsonError("Invalid JSON body", 400);
+    }
+    const allowed = ["title", "property", "content_type", "stage", "owner", "due_date", "published_date", "target_keyword", "cluster", "notes", "url", "lang"];
+    const row = {};
+    for (const k of allowed) {
+      if (body[k] !== undefined) row[k] = body[k];
+    }
+    if (!row.title || !row.stage) return jsonError("title and stage are required", 400);
+    row.updated_at = new Date().toISOString();
+    try {
+      if (body.id) {
+        await sbPatch(env, "content_pipeline", { id: body.id }, row);
+        return { ok: true };
+      }
+      const inserted = await sbPost(env, "content_pipeline", row, "return=representation");
+      return { ok: true, row: inserted && inserted[0] ? inserted[0] : inserted };
+    } catch (e) {
+      return jsonError(e.message);
+    }
+  }
+
+  // GET
+  const property = url.searchParams.get("property") || "all";
+  let rows = [];
+  try {
+    rows = await sbFetchAll(env, "/content_pipeline?select=*&order=due_date.asc.nullslast");
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.includes("content_pipeline") && (msg.includes("does not exist") || msg.includes("Not found"))) {
+      return { rows: [] };
+    }
+    throw e;
+  }
+  if (property !== "all") rows = rows.filter((r) => r.property === property);
+
+  const byStage = {};
+  const stages = ["idea", "brief", "draft", "review", "scheduled", "published", "refresh", "prune"];
+  stages.forEach((s) => (byStage[s] = []));
+  rows.forEach((r) => {
+    if (!byStage[r.stage]) byStage[r.stage] = [];
+    byStage[r.stage].push(r);
+  });
+  return { rows, by_stage: byStage, stages };
+}
+
+// ---------------------------------------------------------------- /api/content_clusters
+async function handleContentClusters(env, url) {
+  const property = url.searchParams.get("property") || "all";
+  let clusters = [];
+  let inventory = [];
+  try {
+    clusters = await sbFetchAll(env, "/content_clusters?select=*&order=cluster.asc");
+  } catch (e) {
+    const msg = e.message || "";
+    if (msg.includes("content_clusters") && (msg.includes("does not exist") || msg.includes("Not found"))) {
+      return { clusters: [], inventory: [] };
+    }
+    throw e;
+  }
+  try {
+    inventory = await sbFetchAll(env, "/content_inventory?select=url,property,content_type,title,tags&limit=5000");
+  } catch (e) {
+    inventory = [];
+  }
+  if (property !== "all") {
+    clusters = clusters.filter((c) => c.property === property);
+    inventory = inventory.filter((r) => r.property === property);
+  }
+
+  // tag-based cluster membership (fall back to target_keywords)
+  const clusterMap = {};
+  clusters.forEach((c) => {
+    clusterMap[c.id] = { ...c, items: [], keywords: [] };
+    const kw = (c.target_keywords || "").split(",").map((k) => k.trim().toLowerCase()).filter(Boolean);
+    clusterMap[c.id].keywords = kw;
+  });
+
+  inventory.forEach((item) => {
+    const itemTags = [];
+    try {
+      itemTags.push(...JSON.parse(item.tags || "[]").map((t) => String(t).toLowerCase()));
+    } catch (e) {}
+    Object.values(clusterMap).forEach((c) => {
+      const match = c.keywords.some((k) => itemTags.includes(k) || (item.title || "").toLowerCase().includes(k));
+      if (match) c.items.push(item);
+    });
+  });
+
+  return { clusters: Object.values(clusterMap), inventory };
+}
+
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
@@ -1186,6 +1286,8 @@ export default {
         else if (route === "llm_prompts") result = await handleLlmPrompts(env, url);
         else if (route === "gsc_llm_queries") result = await handleGscLlmQueries(env, url);
         else if (route === "content_inventory") result = await handleContentInventory(env, url);
+        else if (route === "content_pipeline") result = await handleContentPipeline(env, request, url);
+        else if (route === "content_clusters") result = await handleContentClusters(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));
