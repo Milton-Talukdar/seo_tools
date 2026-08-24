@@ -2024,7 +2024,10 @@
       const byType = summary.by_type || {};
       const byLang = summary.by_lang || {};
       const byStatus = summary.by_status || {};
+      const byProperty = {};
+      rows.forEach(function (r) { byProperty[r.property] = (byProperty[r.property] || 0) + 1; });
 
+      const propertyOpts = Object.keys(byProperty).sort().map(function (p) { return '<option value="' + esc(p) + '">' + esc(p) + ' (' + byProperty[p] + ')</option>'; }).join('');
       const typeOpts = Object.keys(byType).sort().map(function (t) { return '<option value="' + esc(t) + '">' + esc(t) + ' (' + byType[t] + ')</option>'; }).join('');
       const langOpts = Object.keys(byLang).sort().map(function (l) { return '<option value="' + esc(l) + '">' + esc(l) + ' (' + byLang[l] + ')</option>'; }).join('');
       const statusOpts = Object.keys(byStatus).sort().map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + ' (' + byStatus[s] + ')</option>'; }).join('');
@@ -2052,7 +2055,7 @@
         const updatedAgo = daysAgo(r.updated_date);
         const updatedText = r.updated_date ? esc(r.updated_date) + (updatedAgo != null ? ' <span class="sub">(' + updatedAgo + 'd)</span>' : '') : '—';
         const search = [r.title, r.meta_title, r.meta_description, r.slug, r.url, r.excerpt, authors, parseJsonList(r.tags).join(' ')].filter(Boolean).join(' ').toLowerCase();
-        return '<tr data-search="' + esc(search) + '" data-type="' + esc(r.content_type) + '" data-lang="' + esc(r.lang) + '" data-status="' + esc(r.status) + '" data-authors="' + esc(authors.toLowerCase()) + '" data-tags="' + esc(parseJsonList(r.tags).join(' ').toLowerCase()) + '" data-words="' + esc(String(r.word_count || 0)) + '" data-updated="' + esc(String(r.updated_date || '')) + '">' +
+        return '<tr data-search="' + esc(search) + '" data-property="' + esc(r.property) + '" data-type="' + esc(r.content_type) + '" data-lang="' + esc(r.lang) + '" data-status="' + esc(r.status) + '" data-authors="' + esc(authors.toLowerCase()) + '" data-tags="' + esc(parseJsonList(r.tags).join(' ').toLowerCase()) + '" data-words="' + esc(String(r.word_count || 0)) + '" data-updated="' + esc(String(r.updated_date || '')) + '">' +
           '<td><a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc((r.title || r.slug)) + '</a><br><span class="sub">' + esc(r.url.replace(/^https?:\/\//, '').replace(/\/$/, '').slice(0, 55)) + '</span></td>' +
           '<td>' + esc(r.content_type) + '</td>' +
           '<td>' + esc(r.lang) + '</td>' +
@@ -2067,6 +2070,7 @@
 
       const filterHtml = '<div class="table-tools no-print ci-tools">' +
         '<input class="ci-search" type="search" placeholder="Search title, URL, tags…">' +
+        '<select class="ci-property"><option value="">All properties</option>' + propertyOpts + '</select>' +
         '<select class="ci-type"><option value="">All types</option>' + typeOpts + '</select>' +
         '<select class="ci-lang"><option value="">All languages</option>' + langOpts + '</select>' +
         '<select class="ci-status"><option value="">All statuses</option>' + statusOpts + '</select>' +
@@ -2100,6 +2104,7 @@
     const wrap = document.getElementById('panel-content-inventory');
     if (!wrap) return;
     const search = wrap.querySelector('.ci-search');
+    const propertySel = wrap.querySelector('.ci-property');
     const typeSel = wrap.querySelector('.ci-type');
     const langSel = wrap.querySelector('.ci-lang');
     const statusSel = wrap.querySelector('.ci-status');
@@ -2113,6 +2118,7 @@
 
     function applyFilter() {
       const q = search ? search.value.toLowerCase() : '';
+      const p = propertySel ? propertySel.value : '';
       const t = typeSel ? typeSel.value : '';
       const l = langSel ? langSel.value : '';
       const s = statusSel ? statusSel.value : '';
@@ -2122,6 +2128,7 @@
       rows.forEach(function (r) {
         let ok = true;
         if (q && r.getAttribute('data-search').indexOf(q) === -1) ok = false;
+        if (ok && p && r.getAttribute('data-property') !== p) ok = false;
         if (ok && t && r.getAttribute('data-type') !== t) ok = false;
         if (ok && l && r.getAttribute('data-lang') !== l) ok = false;
         if (ok && s && r.getAttribute('data-status') !== s) ok = false;
@@ -2170,7 +2177,7 @@
       });
     });
 
-    [search, typeSel, langSel, statusSel, authorIn, tagIn].forEach(function (el) {
+    [search, propertySel, typeSel, langSel, statusSel, authorIn, tagIn].forEach(function (el) {
       if (el) el.addEventListener('input', applyFilter);
     });
 
