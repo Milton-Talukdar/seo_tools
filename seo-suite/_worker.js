@@ -1102,32 +1102,44 @@ async function handleContentInventory(env, url) {
   }
 
   const summary = { total: 0, by_type: {}, by_lang: {}, by_status: {}, by_author: {}, by_tag: {} };
-  const parseJson = (v) => { try { return JSON.parse(v || "[]"); } catch (err) { return []; } };
 
-  for (const r of rows) {
-    summary.total++;
-    summary.by_type[r.content_type] = (summary.by_type[r.content_type] || 0) + 1;
-    summary.by_lang[r.lang] = (summary.by_lang[r.lang] || 0) + 1;
-    summary.by_status[r.status] = (summary.by_status[r.status] || 0) + 1;
-    for (const a of parseJson(r.authors)) summary.by_author[a] = (summary.by_author[a] || 0) + 1;
-    for (const t of parseJson(r.tags)) summary.by_tag[t] = (summary.by_tag[t] || 0) + 1;
+  function safeList(v) {
+    try {
+      const parsed = JSON.parse(v || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
   }
 
-  const filtered = rows.filter((r) => {
-    if (property !== "all" && r.property !== property) return false;
-    if (lang !== "all" && r.lang !== lang) return false;
-    if (contentType !== "all" && r.content_type !== contentType) return false;
-    if (status !== "all" && r.status !== status) return false;
-    if (author && !parseJson(r.authors).some((a) => a.toLowerCase().includes(author))) return false;
-    if (tag && !parseJson(r.tags).some((t) => t.toLowerCase().includes(tag))) return false;
-    if (search) {
-      const hay = `${r.title || ""} ${r.meta_title || ""} ${r.meta_description || ""} ${r.slug || ""} ${r.url || ""} ${r.excerpt || ""}`.toLowerCase();
-      if (!hay.includes(search)) return false;
+  try {
+    for (const r of rows) {
+      summary.total++;
+      summary.by_type[r.content_type] = (summary.by_type[r.content_type] || 0) + 1;
+      summary.by_lang[r.lang] = (summary.by_lang[r.lang] || 0) + 1;
+      summary.by_status[r.status] = (summary.by_status[r.status] || 0) + 1;
+      for (const a of safeList(r.authors)) summary.by_author[a] = (summary.by_author[a] || 0) + 1;
+      for (const t of safeList(r.tags)) summary.by_tag[t] = (summary.by_tag[t] || 0) + 1;
     }
-    return true;
-  });
 
-  return { rows: filtered, summary };
+    const filtered = rows.filter((r) => {
+      if (property !== "all" && r.property !== property) return false;
+      if (lang !== "all" && r.lang !== lang) return false;
+      if (contentType !== "all" && r.content_type !== contentType) return false;
+      if (status !== "all" && r.status !== status) return false;
+      if (author && !safeList(r.authors).some((a) => a.toLowerCase().includes(author))) return false;
+      if (tag && !safeList(r.tags).some((t) => t.toLowerCase().includes(tag))) return false;
+      if (search) {
+        const hay = `${r.title || ""} ${r.meta_title || ""} ${r.meta_description || ""} ${r.slug || ""} ${r.url || ""} ${r.excerpt || ""}`.toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+
+    return { rows: filtered, summary };
+  } catch (err) {
+    return { error: err.message, stack: err.stack };
+  }
 }
 
 function cacheKey(request, route) {

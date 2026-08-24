@@ -237,11 +237,21 @@ def sync_repo(repo_path: Path, property: str, site: str, dry_run: bool = False):
             "synced_at": datetime.now(timezone.utc).isoformat(),
         })
 
-    print(f"[inventory] {property}: {len(rows)} rows ready")
+    # Deduplicate by primary key (url, lang) so Supabase upsert doesn't fail
+    seen = {}
+    deduped = []
+    for r in rows:
+        key = (r["url"], r["lang"])
+        if key in seen:
+            print(f"[inventory] duplicate skipped: {r['url']} ({r['lang']}) — first seen at {seen[key]}")
+            continue
+        seen[key] = r["repo_path"]
+        deduped.append(r)
+    print(f"[inventory] {property}: {len(deduped)} unique rows ({len(rows) - len(deduped)} duplicates)")
     if dry_run:
-        return rows
-    supabase_upsert("content_inventory", rows)
-    return rows
+        return deduped
+    supabase_upsert("content_inventory", deduped)
+    return deduped
 
 
 def main():
