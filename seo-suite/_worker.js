@@ -2057,6 +2057,24 @@ function cacheKey(request, route) {
   return `v17:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
+// ---------------------------------------------------------------- /api/debug/env
+async function handleDebugEnv(env) {
+  const login = env.DATAFORSEO_LOGIN || "";
+  const password = env.DATAFORSEO_PASSWORD || "";
+  function preview(s) {
+    if (!s) return "(empty)";
+    if (s.length <= 6) return s.slice(0, 1) + "..." + s.slice(-1);
+    return s.slice(0, 2) + "..." + s.slice(-2) + " (len " + s.length + ")";
+  }
+  return {
+    dataforseo_login_preview: preview(login),
+    dataforseo_password_length: password.length,
+    dataforseo_password_preview: preview(password),
+    has_dataforseo_login: !!login,
+    has_dataforseo_password: !!password,
+  };
+}
+
 // ---------------------------------------------------------------------- router
 export default {
   async fetch(request, env, ctx) {
@@ -2065,6 +2083,8 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       try {
         const route = url.pathname.slice(5).replace(/\/$/, "") || "summary";
+        // Temporary debug route — remove after fixing DataForSEO auth.
+        if (route === "debug/env") return Response.json(await handleDebugEnv(env));
         if (!CACHE_TTL[route]) return jsonError("Not found", 404);
 
         // X-Cache-Enabled makes it possible to tell from curl whether the
