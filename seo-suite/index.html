@@ -7,28 +7,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="dashboard.css?v=8">
+  <link rel="stylesheet" href="dashboard.css?v=9">
   <script>document.documentElement.className += ' has-js';</script>
 </head>
 <body>
-  <nav class="sidebar">
-    <div class="side-brand">Vantage Circle<span>SEO Suite</span></div>
-    <a class="nav-item active" data-panel="summary">Executive Summary</a>
-    <div class="nav-group">Rank Tracker</div>
-    <a class="nav-item sub" data-panel="rank" data-tab="vantagecircle">Vantage Circle</a>
-    <a class="nav-item sub" data-panel="rank" data-tab="vantagefit">Vantage Fit</a>
-    <a class="nav-item" data-panel="backlinks">Backlinks</a>
-    <a class="nav-item" data-panel="freshness">Content Freshness</a>
-    <div class="nav-group">LLM Visibility</div>
-    <a class="nav-item sub" data-panel="llm" data-tab="vantagecircle">Vantage Circle</a>
-    <a class="nav-item sub" data-panel="llm" data-tab="vantagefit">Vantage Fit</a>
-    <a class="nav-item sub" data-panel="llm-prompts">LLM Prompts</a>
-    <a class="nav-item sub" data-panel="gsc-llm-queries">GSC LLM Queries</a>
-    <div class="nav-group">Competitor Tracker</div>
-    <a class="nav-item sub" data-panel="competitor" data-tab="vantagecircle">Vantage Circle</a>
-    <a class="nav-item sub" data-panel="competitor" data-tab="vantagefit">Vantage Fit</a>
-    <div class="side-foot"><span id="module-count">6 modules</span><br>live dashboard</div>
-  </nav>
+  <nav class="vc-rail" id="vc-rail"></nav>
+  <nav class="vc-subnav" id="vc-subnav"></nav>
   <div class="content">
     <div class="wrap">
       <div class="hero">
@@ -40,12 +24,13 @@
       <section class="panel" id="panel-rank"><div class="skel skel-sm"></div><div class="skel skel-lg"></div></section>
       <section class="panel" id="panel-backlinks"><div class="skel skel-sm"></div><div class="skel skel-lg"></div></section>
       <section class="panel" id="panel-freshness"><div class="skel skel-sm"></div><div class="skel skel-lg"></div></section>
+      <section class="panel" id="panel-cannibalization"><div class="skel skel-sm"></div><div class="skel skel-lg"></div></section>
       <section class="panel" id="panel-llm"><div class="skel skel-sm"></div><div class="skel skel-lg"></div></section>
       <section class="panel" id="panel-llm-prompts"><div class="skel skel-sm"></div><div class="skel skel-lg"></div></section>
       <section class="panel" id="panel-gsc-llm-queries"><div class="skel skel-sm"></div><div class="skel skel-lg"></div></section>
       <section class="panel" id="panel-competitor"><div class="skel skel-sm"></div><div class="skel skel-lg"></div></section>
     </div>
   </div>
-  <script src="dashboard.js?v=8"></script>
+  <script src="dashboard.js?v=9"></script>
 </body>
 </html>

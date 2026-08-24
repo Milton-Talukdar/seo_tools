@@ -7,6 +7,60 @@
   };
   const NOT_FOUND = 101;
   const INTENT_SHORT = { informational: 'info', navigational: 'nav', commercial: 'com', transactional: 'trans' };
+
+  const ICONS = {
+    overview: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>',
+    seo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>',
+    content: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>',
+    ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>',
+    competitors: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
+  };
+
+  const MODULES = [
+    {
+      id: 'overview', label: 'Overview', icon: ICONS.overview,
+      groups: [
+        { label: 'Executive', sections: [{ id: 'summary', label: 'Executive Summary', panel: 'summary' }] }
+      ]
+    },
+    {
+      id: 'seo', label: 'SEO', icon: ICONS.seo,
+      groups: [
+        { label: 'Rank', sections: [{ id: 'rank', label: 'Rank Tracker', panel: 'rank', tab: 'vantagecircle' }] },
+        { label: 'Links', sections: [{ id: 'backlinks', label: 'Backlinks', panel: 'backlinks' }] }
+      ]
+    },
+    {
+      id: 'content', label: 'Content', icon: ICONS.content,
+      groups: [
+        { label: 'Maintenance', sections: [{ id: 'freshness', label: 'Freshness Queue', panel: 'freshness' }] },
+        { label: 'Quality', sections: [{ id: 'cannibalization', label: 'Cannibalization', panel: 'cannibalization' }] }
+      ]
+    },
+    {
+      id: 'ai-search', label: 'AI Search', icon: ICONS.ai,
+      groups: [
+        { label: 'Visibility', sections: [
+          { id: 'llm-vc', label: 'Vantage Circle', panel: 'llm', tab: 'vantagecircle' },
+          { id: 'llm-vfit', label: 'Vantage Fit', panel: 'llm', tab: 'vantagefit' }
+        ]},
+        { label: 'Prompts', sections: [
+          { id: 'llm-prompts', label: 'Tracked Prompts', panel: 'llm-prompts' },
+          { id: 'gsc-llm-queries', label: 'GSC LLM Queries', panel: 'gsc-llm-queries' }
+        ]}
+      ]
+    },
+    {
+      id: 'competitors', label: 'Competitors', icon: ICONS.competitors,
+      groups: [
+        { label: 'Track', sections: [
+          { id: 'competitor-vc', label: 'Vantage Circle', panel: 'competitor', tab: 'vantagecircle' },
+          { id: 'competitor-vfit', label: 'Vantage Fit', panel: 'competitor', tab: 'vantagefit' }
+        ]}
+      ]
+    }
+  ];
+
   const COMPETITOR_TYPES = [
     ['', 'All types'],
     ['new_page', 'New page'],
@@ -1520,48 +1574,137 @@
     });
   }
 
-  function panelFromHash() {
-    var m = location.hash.match(/^#\/([a-z]+)(?:\/([a-z]+))?/);
-    return m ? { p: m[1], t: m[2] } : null;
+  function parseHash() {
+    var h = location.hash.replace(/^#\/?/, '');
+    if (!h) return null;
+    var parts = h.split('/');
+    var moduleId = parts[0];
+    var mod = MODULES.find(function (m) { return m.id === moduleId; });
+    if (mod && parts.length >= 2) {
+      return { module: moduleId, section: parts[1], tab: parts[2] || null };
+    }
+    // legacy format: #/panel[/tab]
+    return { module: null, section: parts[0], tab: parts[1] || null };
   }
 
-  function activatePanel(p, t) {
-    var items = Array.from(document.querySelectorAll('.nav-item'));
-    var it = items.find(function (n) {
-      return n.getAttribute('data-panel') === p &&
-        (t ? n.getAttribute('data-tab') === t : !n.getAttribute('data-tab'));
-    }) || items.find(function (n) { return n.getAttribute('data-panel') === p; });
-    if (!it) return;
-    items.forEach(function (n) { n.classList.remove('active'); });
-    it.classList.add('active');
+  function findSection(sectionId) {
+    for (var i = 0; i < MODULES.length; i++) {
+      var mod = MODULES[i];
+      for (var j = 0; j < mod.groups.length; j++) {
+        var sec = mod.groups[j].sections.find(function (s) { return s.id === sectionId; });
+        if (sec) return { module: mod, section: sec };
+      }
+    }
+    return null;
+  }
+
+  function findSectionByPanelTab(panel, tab) {
+    for (var i = 0; i < MODULES.length; i++) {
+      var mod = MODULES[i];
+      for (var j = 0; j < mod.groups.length; j++) {
+        var sec = mod.groups[j].sections.find(function (s) {
+          return s.panel === panel && (!tab || s.tab === tab);
+        });
+        if (sec) return { module: mod, section: sec };
+      }
+    }
+    return null;
+  }
+
+  var currentModuleId = null;
+
+  function renderRail() {
+    var rail = document.getElementById('vc-rail');
+    if (!rail) return;
+    var html = '<div class="vc-rail-logo"><div class="vc-rail-logo__mark">VC</div></div>';
+    MODULES.forEach(function (m) {
+      var first = m.groups[0].sections[0].id;
+      html += '<a class="vc-rail-item" href="#/' + esc(m.id) + '/' + esc(first) + '" data-module="' + esc(m.id) + '">' +
+        m.icon + '<span class="lab">' + esc(m.label) + '</span></a>';
+    });
+    html += '<div class="vc-rail-foot"><span>SEO Suite</span></div>';
+    rail.innerHTML = html;
+    rail.querySelectorAll('.vc-rail-item').forEach(function (it) {
+      it.addEventListener('click', function (e) {
+        e.preventDefault();
+        var modId = it.getAttribute('data-module');
+        var first = MODULES.find(function (m) { return m.id === modId; }).groups[0].sections[0].id;
+        location.hash = '#/' + modId + '/' + first;
+      });
+    });
+  }
+
+  function renderSubnav(moduleId) {
+    var sub = document.getElementById('vc-subnav');
+    if (!sub) return;
+    var mod = MODULES.find(function (m) { return m.id === moduleId; }) || MODULES[0];
+    var html = '<div class="vc-subnav-head">' + esc(mod.label) + '</div><ul class="vc-subnav-list">';
+    mod.groups.forEach(function (g) {
+      html += '<li class="vc-subnav-group">' + esc(g.label) + '</li>';
+      g.sections.forEach(function (s) {
+        html += '<li><a class="vc-subnav-item" href="#/' + esc(mod.id) + '/' + esc(s.id) + '" data-section="' + esc(s.id) + '">' + esc(s.label) + '</a></li>';
+      });
+    });
+    html += '</ul><div class="vc-subnav-foot">Select a section to view its dashboard panel.</div>';
+    sub.innerHTML = html;
+    sub.querySelectorAll('.vc-subnav-item').forEach(function (it) {
+      it.addEventListener('click', function (e) {
+        e.preventDefault();
+        var sec = it.getAttribute('data-section');
+        location.hash = '#/' + mod.id + '/' + sec;
+      });
+    });
+  }
+
+  function activateSection(sectionId, tabOverride) {
+    var found = findSection(sectionId);
+    if (!found && tabOverride) {
+      // legacy fallback: sectionId was a panel id, tabOverride was a tab key
+      found = findSectionByPanelTab(sectionId, tabOverride);
+    }
+    if (!found) found = findSection('summary');
+    var mod = found.module;
+    var sec = found.section;
+
+    if (currentModuleId !== mod.id) {
+      renderSubnav(mod.id);
+      currentModuleId = mod.id;
+    }
+
+    document.querySelectorAll('.vc-rail-item').forEach(function (el) {
+      el.classList.toggle('is-active', el.getAttribute('data-module') === mod.id);
+    });
+    document.querySelectorAll('.vc-subnav-item').forEach(function (el) {
+      el.classList.toggle('is-active', el.getAttribute('data-section') === sec.id);
+    });
+
     document.querySelectorAll('.panel').forEach(function (el) { el.classList.remove('active'); });
-    var el = document.getElementById('panel-' + p);
-    if (el) el.classList.add('active');
-    var tab = t || it.getAttribute('data-tab');
-    if (tab && el) {
-      var tabBtn = el.querySelector('.prop-tab[data-prop="' + tab + '"]');
+    var panelEl = document.getElementById('panel-' + sec.panel);
+    if (panelEl) panelEl.classList.add('active');
+
+    var tab = tabOverride || sec.tab;
+    if (tab && panelEl) {
+      var tabBtn = panelEl.querySelector('.prop-tab[data-prop="' + tab + '"]');
       if (tabBtn) tabBtn.click();
     }
     window.scrollTo(0, 0);
   }
 
-  function initSidebar() {
-    document.querySelectorAll('.nav-item').forEach(function (it) {
-      it.addEventListener('click', function () {
-        var p = it.getAttribute('data-panel');
-        if (!p) return;
-        var t = it.getAttribute('data-tab');
-        var h = '#/' + p + (t ? '/' + t : '');
-        if (location.hash === h) activatePanel(p, t);
-        else location.hash = h; // hashchange handler activates the panel
-      });
-    });
+  function initNavigation() {
+    renderRail();
+    var initial = parseHash();
+    if (initial) {
+      var mod = MODULES.find(function (m) { return m.id === initial.module; });
+      renderSubnav(mod ? mod.id : (findSection(initial.section) || findSection('summary')).module.id);
+    } else {
+      renderSubnav('overview');
+    }
     window.addEventListener('hashchange', function () {
-      var r = panelFromHash();
-      if (r) activatePanel(r.p, r.t);
+      var r = parseHash();
+      if (r) activateSection(r.section, r.tab);
     });
-    var initial = panelFromHash();
-    if (initial) activatePanel(initial.p, initial.t);
+    if (initial) activateSection(initial.section, initial.tab);
+    else activateSection('summary');
   }
 
   function initRankInteractions() {
@@ -1848,14 +1991,52 @@
     }
   }
 
+  // ---------------------------------------------------------------- cannibalization
+  async function loadCannibalization() {
+    const el = document.getElementById('panel-cannibalization');
+    try {
+      const [circle, fit] = await Promise.all([
+        api('cannibalization?property=vantagecircle').catch(function () { return null; }),
+        api('cannibalization?property=vantagefit').catch(function () { return null; }),
+      ]);
+
+      const tabs = [
+        { key: 'vantagecircle', label: 'Vantage Circle', data: circle },
+        { key: 'vantagefit', label: 'Vantage Fit', data: fit },
+      ];
+
+      const anyData = tabs.some(function (t) { return t.data && (t.data.dilution || t.data.url_flips || t.data.missing_url); });
+      if (!anyData) {
+        el.innerHTML = '<h2>Cannibalization</h2><div class="card">No cannibalization data available yet.</div>';
+        return;
+      }
+
+      const tabHtml = '<div class="prop-tabs no-print">' + tabs.map(function (t, i) {
+        return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-prop="' + esc(t.key) + '">' + esc(t.label) + '</button>';
+      }).join('') + '</div>';
+
+      const panelsHtml = tabs.map(function (t, i) {
+        const body = renderCannibalization(t.data) || '<div class="card"><p class="sub">No cannibalization detected for ' + esc(t.label) + '.</p></div>';
+        return '<div class="can-prop' + (i === 0 ? ' active' : '') + '" id="can-' + esc(t.key) + '">' + body + '</div>';
+      }).join('');
+
+      const latestDay = tabs.map(function (t) { return t.data && t.data.latest_day; }).filter(Boolean).sort().pop();
+      el.innerHTML = '<h2>Cannibalization</h2>' + tabHtml + panelsHtml + stampHtml(latestDay);
+      initPropTabs(el, 'can-prop');
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
   // ---------------------------------------------------------------- boot
   document.addEventListener('DOMContentLoaded', function () {
-    initSidebar();
+    initNavigation();
     Promise.all([
       loadSummary(),
       loadRank(),
       loadBacklinks(),
       loadFreshness(),
+      loadCannibalization(),
       loadLLM(),
       loadLlmPrompts(),
       loadGscLlmQueries(),
@@ -1863,9 +2044,9 @@
     ]).catch(function (e) {
       console.error('Dashboard load error:', e);
     }).finally(function () {
-      // Re-apply the hash panel/tab now that async content (prop tabs) exists.
-      var r = panelFromHash();
-      if (r) activatePanel(r.p, r.t);
+      // Re-apply the hash section/tab now that async content (prop tabs) exists.
+      var r = parseHash();
+      if (r) activateSection(r.section, r.tab);
     });
   });
 })();
