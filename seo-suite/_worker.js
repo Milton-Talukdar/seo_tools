@@ -2040,14 +2040,22 @@ async function handleKeywordOverview(env, url) {
 
   const result = await dfsPost(env, endpoint, payload);
   let items = [];
-  // keywords_data returns a nested task structure: result -> tasks -> result -> items -> keywords
+  // Try multiple response shapes: direct items, nested tasks, or item.keywords array.
   for (const task of result || []) {
-    for (const sub of task.tasks || []) {
-      for (const item of sub.result || []) {
-        for (const kw of item.keywords || []) {
+    const candidates = [
+      task.items,
+      (task.result || []).flatMap((r) => r.items || []),
+      (task.tasks || []).flatMap((t) => (t.result || []).flatMap((r) => r.items || [])),
+    ];
+    for (const list of candidates) {
+      if (!list || !list.length) continue;
+      for (const item of list) {
+        const keywords = item.keywords || [item];
+        for (const kw of keywords) {
           items.push(normalizeDfsItem({ ...kw, keyword: kw.keyword || keyword }));
         }
       }
+      break;
     }
   }
 
