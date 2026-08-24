@@ -113,18 +113,28 @@ function intentShort(intent) {
 }
 
 function normalizeDfsItem(item) {
-  const kw = item.keyword || "";
-  const kd = item.keyword_difficulty != null ? item.keyword_difficulty : (item.keyword_properties?.keyword_difficulty);
-  const intent = item.search_intent || item.search_intent_info?.main_intent || item.intent;
-  const vol = item.search_volume != null ? item.search_volume : (item.keyword_data?.keyword_info?.search_volume);
-  const cpcVal = item.cpc != null ? item.cpc : (item.keyword_data?.keyword_info?.cpc);
+  // Labs endpoints wrap keyword data in several shapes:
+  // - /keywords_data/google/search_volume/live: top-level keyword/search_volume/cpc/...
+  // - /dataforseo_labs/google/keyword_ideas/live: top-level keyword + keyword_info
+  // - /dataforseo_labs/google/keyword_suggestions/live: top-level keyword + keyword_info
+  // - /dataforseo_labs/google/related_keywords/live: keyword_data.keyword + keyword_data.keyword_info
+  // - /dataforseo_labs/google/keywords_for_site/live: keyword_data.keyword + ranked_serp_element
+  const data = item.keyword_data || item;
+  const kw = data.keyword || item.keyword || "";
+  const info = data.keyword_info || {};
+  const props = data.keyword_properties || item.keyword_properties || {};
+  const intentInfo = data.search_intent_info || item.search_intent_info || {};
+  const kd = item.keyword_difficulty != null ? item.keyword_difficulty : props.keyword_difficulty;
+  const intent = item.search_intent || intentInfo.main_intent || item.intent;
+  const vol = item.search_volume != null ? item.search_volume : info.search_volume;
+  const cpcVal = item.cpc != null ? item.cpc : info.cpc;
   return {
     keyword: normalizeKeyword(kw),
     search_volume: vol || 0,
     cpc: cpcVal || 0,
     keyword_difficulty: kd != null ? Math.round(kd) : null,
     search_intent: intentShort(intent),
-    competition: item.competition || item.keyword_data?.keyword_info?.competition || 0,
+    competition: item.competition || info.competition || 0,
     words: wordCount(kw),
   };
 }
@@ -1945,6 +1955,22 @@ async function handleKeywordGaps(env, url) {
   return { rows: rows.slice(0, limit) };
 }
 
+// Batch-enrich a list of keywords with live search_volume/cpc/kd/intent.
+// Up to 100 keywords per call to stay within DataForSEO task limits and cost.
+async function batchKeywordOverview(env, keywords, country = "us") {
+  const locationCode = country === "us" ? 2840 : 2826;
+  const endpoint = "/keywords_data/google/search_volume/live";
+  const payload = [{ keywords, location_code: locationCode, language_code: "en" }];
+  const result = await dfsPost(env, endpoint, payload);
+  const map = {};
+  for (const item of result || []) {
+    if (item.keyword) {
+      map[normalizeKeyword(item.keyword)] = normalizeDfsItem(item);
+    }
+  }
+  return map;
+}
+
 // ---------------------------------------------------------------- /api/keywords/discover
 async function handleKeywordDiscover(env, url) {
   const seed = url.searchParams.get("seed") || "";
@@ -1977,16 +2003,38 @@ async function handleKeywordDiscover(env, url) {
   }
 
   if (type === "questions") {
-    const questionWords = /^(who|what|where|when|why|how|which|are|is|can|do|does|will|should|best|top|vs|versus)\b/i;
-    items = items.filter((i) => questionWords.test(i.keyword));
+    const questionWords = /^(who|what|where|when|why|how|which|are|is|can|do|does|did|will|would|should|shall|may|might|am|has|have)\b/i;
+    const questionPatterns = /\b(how to|what is|what are|why is|why do|why does|how do|how does|how can|how should|how much|how many|where to|where is|where can|when to|when is|when does|which is|which are|who is|who are|can i|can we|can you|do i|do we|does it|is it|are there|will it|should i|should we)\b/i;
+    items = items.filter((i) => questionWords.test(i.keyword) || questionPatterns.test(i.keyword));
   }
 
   const seen = new Set();
   items = items.filter((i) => {
-    if (seen.has(i.keyword)) return false;
+    if (!i.keyword || seen.has(i.keyword)) return false;
     seen.add(i.keyword);
     return true;
   });
+
+  // Enrich Labs results that lack fresh volume/CPC/KD data.
+  // Labs ideas/suggestions/related sometimes return sparse metrics.
+  const needsEnrich = items.filter((i) => !i.search_volume).slice(0, 100);
+  if (needsEnrich.length) {
+    try {
+      const enriched = await batchKeywordOverview(env, needsEnrich.map((i) => i.keyword), country);
+      for (const item of items) {
+        const e = enriched[item.keyword];
+        if (e) {
+          item.search_volume = e.search_volume || item.search_volume;
+          item.cpc = e.cpc || item.cpc;
+          item.competition = e.competition || item.competition;
+          if (e.keyword_difficulty != null) item.keyword_difficulty = e.keyword_difficulty;
+          if (e.search_intent) item.search_intent = e.search_intent;
+        }
+      }
+    } catch (e) {
+      // Non-fatal: return the discovered keywords even if enrichment fails.
+    }
+  }
 
   return { seed, type, property, country, items: items.slice(0, limit) };
 }
@@ -2053,7 +2101,7 @@ async function handleKeywordOverview(env, url) {
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
-  return `v18:seo-suite:${route}${qs ? ":" + qs : ""}`;
+  return `v19:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
 // ---------------------------------------------------------------------- router
