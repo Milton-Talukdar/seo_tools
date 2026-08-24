@@ -1608,11 +1608,11 @@ async function handleContentDecay(env, url) {
 async function handleContentLinks(env, url) {
   const property = url.searchParams.get("property") || "all";
   const clusterFilter = url.searchParams.get("cluster") || "";
-  const limit = parseInt(url.searchParams.get("limit") || "200", 10);
+  const limit = parseInt(url.searchParams.get("limit") || "150", 10);
 
   let inventory = [];
   try {
-    inventory = await sbFetchAll(env, "/content_inventory?select=url,property,content_type,title,tags,internal_links&limit=5000");
+    inventory = await sbFetchAll(env, "/content_inventory?select=url,property,content_type,title,tags,internal_links&limit=2000");
   } catch (e) {
     const msg = e.message || "";
     if (msg.includes("content_inventory") && (msg.includes("does not exist") || msg.includes("Not found"))) {
@@ -1637,7 +1637,8 @@ async function handleContentLinks(env, url) {
   function assignCluster(item) {
     const tags = [];
     try {
-      tags.push(...JSON.parse(item.tags || "[]").map((t) => String(t).toLowerCase()));
+      const parsed = JSON.parse(item.tags || "[]");
+      if (Array.isArray(parsed)) tags.push(...parsed.map((t) => String(t).toLowerCase()));
     } catch (e) {}
     const title = (item.title || "").toLowerCase();
     for (const [name, meta] of Object.entries(clusterKeywords)) {
@@ -1648,8 +1649,7 @@ async function handleContentLinks(env, url) {
     return null;
   }
 
-  const items = inventory.map((item) => ({ ...item, cluster: assignCluster(item) }));
-  if (clusterFilter) items.forEach((item) => { item.cluster = clusterFilter; });
+  const items = inventory.map((item) => ({ ...item, cluster: clusterFilter || assignCluster(item) }));
 
   const byCluster = {};
   items.forEach((item) => {
@@ -1660,33 +1660,36 @@ async function handleContentLinks(env, url) {
 
   const suggestions = [];
   Object.entries(byCluster).forEach(([cluster, clusterItems]) => {
-    if (clusterItems.length < 2) return;
+    if (clusterItems.length < 2 || clusterItems.length > 80) return;
     clusterItems.forEach((source) => {
-      const candidates = clusterItems
-        .filter((target) => target.url !== source.url)
-        .map((target) => {
-          const sourceTitle = (source.title || "").toLowerCase();
-          const targetTitle = (target.title || "").toLowerCase();
-          let score = 0;
-          try {
-            const tags = JSON.parse(target.tags || "[]").map((t) => String(t).toLowerCase());
-            if (sourceTitle && tags.some((t) => sourceTitle.includes(t))) score += 3;
-          } catch (e) {}
-          if (sourceTitle && targetTitle.includes(sourceTitle.split(" ")[0])) score += 1;
-          score += (target.internal_links || 0) < 3 ? 2 : 0;
-          return { target, score };
-        })
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3);
+      if ((source.internal_links || 0) >= 10) return;
+      const sourceTitle = (source.title || "").toLowerCase();
+      const candidates = [];
+      for (const target of clusterItems) {
+        if (target.url === source.url) continue;
+        let score = 0;
+        const targetTitle = (target.title || "").toLowerCase();
+        try {
+          const parsed = JSON.parse(target.tags || "[]");
+          if (Array.isArray(parsed) && sourceTitle) {
+            if (parsed.some((t) => sourceTitle.includes(String(t).toLowerCase()))) score += 3;
+          }
+        } catch (e) {}
+        if (sourceTitle && targetTitle.includes(sourceTitle.split(" ")[0])) score += 1;
+        if ((target.internal_links || 0) < 3) score += 1;
+        if (score > 0) candidates.push({ target, score });
+      }
+      candidates.sort((a, b) => b.score - a.score);
+      const top = candidates.slice(0, 2);
 
-      if (candidates.length) {
+      if (top.length) {
         suggestions.push({
           source_url: source.url,
           source_title: source.title,
           source_property: source.property,
           cluster,
           internal_links: source.internal_links || 0,
-          targets: candidates.map((c) => ({
+          targets: top.map((c) => ({
             url: c.target.url,
             title: c.target.title,
             score: c.score,
