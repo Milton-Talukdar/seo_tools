@@ -2413,7 +2413,7 @@
       const currentProp = 'vantagecircle';
 
       const propOpts = PIPELINE_PROPS.map(function (p) {
-        return '<option value="' + esc(p.id) + '"' + (p.id === currentProp ? ' selected' : '') + '>' + esc(p.label) + '</option>';
+        return '<option value="' + esc(p.id) + '">' + esc(p.label) + '</option>';
       }).join('');
 
       const totalItems = clusters.reduce(function (sum, c) { return sum + (c.items || []).length; }, 0);
@@ -2425,7 +2425,7 @@
         '<div class="kpi"><div class="num">' + fmtNum(Math.max(0, orphanCount)) + '</div><div class="label">Orphan items</div></div>' +
         '</div>';
 
-      const listHtml = clusters.filter(function (c) { return c.property === currentProp; }).map(function (c) {
+      const listHtml = clusters.map(function (c) {
         const items = c.items || [];
         const kws = (c.target_keywords || '').split(',').map(function (k) { return k.trim(); }).filter(Boolean).map(function (k) {
           return '<span class="chip">' + esc(k) + '</span>';
@@ -2472,6 +2472,7 @@
     }
     if (propSel) propSel.addEventListener('change', filter);
     if (search) search.addEventListener('input', filter);
+    filter();
   }
 
   // ---------------------------------------------------------------- content performance
