@@ -1982,23 +1982,53 @@ async function handleKeywordDiscover(env, url) {
   if (!seed) return jsonError("seed is required", 400);
 
   const locationCode = country === "us" ? 2840 : 2826;
-  let endpoint, payload;
-  if (type === "suggestions" || type === "questions") {
-    endpoint = "/dataforseo_labs/google/keyword_suggestions/live";
-    payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
-  } else if (type === "related") {
-    endpoint = "/dataforseo_labs/google/related_keywords/live";
-    payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
-  } else {
-    endpoint = "/dataforseo_labs/google/keyword_ideas/live";
-    payload = [{ keywords: [seed], location_code: locationCode, language_code: "en", limit }];
-  }
-
-  const result = await dfsPost(env, endpoint, payload);
   let items = [];
-  for (const r of result) {
-    for (const item of r.items || []) {
-      items.push(normalizeDfsItem(item));
+
+  if (type === "questions") {
+    // A single keyword_suggestions call for a bare seed rarely returns questions.
+    // Probe common question stems in parallel and filter the combined pool.
+    const questionSeeds = [
+      `how to ${seed}`,
+      `what is ${seed}`,
+      `why ${seed}`,
+      `${seed} ideas`,
+    ];
+    const perSeedLimit = Math.max(20, Math.ceil(limit / questionSeeds.length));
+    const results = await Promise.all(
+      questionSeeds.map(async (s) => {
+        try {
+          return await dfsPost(env, "/dataforseo_labs/google/keyword_suggestions/live", [
+            { keyword: s, location_code: locationCode, language_code: "en", limit: perSeedLimit },
+          ]);
+        } catch (e) {
+          return [];
+        }
+      })
+    );
+    for (const result of results) {
+      for (const r of result) {
+        for (const item of r.items || []) {
+          items.push(normalizeDfsItem(item));
+        }
+      }
+    }
+  } else {
+    let endpoint, payload;
+    if (type === "suggestions") {
+      endpoint = "/dataforseo_labs/google/keyword_suggestions/live";
+      payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
+    } else if (type === "related") {
+      endpoint = "/dataforseo_labs/google/related_keywords/live";
+      payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
+    } else {
+      endpoint = "/dataforseo_labs/google/keyword_ideas/live";
+      payload = [{ keywords: [seed], location_code: locationCode, language_code: "en", limit }];
+    }
+    const result = await dfsPost(env, endpoint, payload);
+    for (const r of result) {
+      for (const item of r.items || []) {
+        items.push(normalizeDfsItem(item));
+      }
     }
   }
 
