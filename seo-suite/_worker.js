@@ -1958,13 +1958,13 @@ async function handleKeywordDiscover(env, url) {
   const locationCode = country === "us" ? 2840 : 2826;
   let endpoint, payload;
   if (type === "suggestions" || type === "questions") {
-    endpoint = "/dataforseo_labs/google/keywords_suggestions/live";
+    endpoint = "/dataforseo_labs/google/keyword_suggestions/live";
     payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
   } else if (type === "related") {
     endpoint = "/dataforseo_labs/google/related_keywords/live";
     payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
   } else {
-    endpoint = "/dataforseo_labs/google/keywords_ideas/live";
+    endpoint = "/dataforseo_labs/google/keyword_ideas/live";
     payload = [{ keyword: seed, location_code: locationCode, language_code: "en", limit }];
   }
 
