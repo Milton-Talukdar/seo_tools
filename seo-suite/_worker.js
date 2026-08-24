@@ -368,13 +368,9 @@ async function handleBacklinks(env) {
     sbFetch(env, "/refdomain_events?select=*&order=day.desc&limit=40"),
   ]);
 
-  // Latest expanded snapshot day per property
-  const dayRows = await sbFetch(
-    env,
-    "/backlink_details?select=day,property&order=day.desc&limit=100"
-  );
+  // Latest expanded snapshot day per property (snapshots are already ordered by day desc)
   const latestByProp = {};
-  for (const r of dayRows) {
+  for (const r of snapshots) {
     if (!latestByProp[r.property]) latestByProp[r.property] = r.day;
   }
 
