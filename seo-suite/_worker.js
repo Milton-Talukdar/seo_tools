@@ -77,7 +77,7 @@ async function sbPatch(env, table, filters, body) {
 // ---------------------------------------------------------------- DataForSEO helpers
 async function dfsPost(env, endpoint, payload) {
   if (!env.DATAFORSEO_LOGIN || !env.DATAFORSEO_PASSWORD) {
-    throw new Error("DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD not configured");
+    throw new Error("DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD are not configured in Cloudflare Pages environment variables");
   }
   const auth = btoa(`${env.DATAFORSEO_LOGIN}:${env.DATAFORSEO_PASSWORD}`);
   const res = await fetch(`https://api.dataforseo.com/v3${endpoint}`, {
