@@ -2086,6 +2086,15 @@ async function handleDebugEnv(env) {
   };
 }
 
+// ---------------------------------------------------------------- /api/debug/overview
+async function handleDebugOverview(env, url) {
+  const keyword = url.searchParams.get("keyword") || "employee engagement";
+  const endpoint = "/keywords_data/google/search_volume/live";
+  const payload = [{ keywords: [keyword], location_code: 2840, language_code: "en" }];
+  const result = await dfsPost(env, endpoint, payload);
+  return { raw: result };
+}
+
 // ---------------------------------------------------------------------- router
 export default {
   async fetch(request, env, ctx) {
@@ -2094,8 +2103,9 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       try {
         const route = url.pathname.slice(5).replace(/\/$/, "") || "summary";
-        // Temporary debug route — remove after fixing DataForSEO auth.
+        // Temporary debug routes — remove after fixing DataForSEO response parsing.
         if (route === "debug/env") return Response.json(await handleDebugEnv(env));
+        if (route === "debug/overview") return Response.json(await handleDebugOverview(env, url));
         if (!CACHE_TTL[route]) return jsonError("Not found", 404);
 
         // X-Cache-Enabled makes it possible to tell from curl whether the
