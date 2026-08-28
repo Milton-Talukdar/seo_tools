@@ -9,12 +9,24 @@
   const INTENT_SHORT = { informational: 'info', navigational: 'nav', commercial: 'com', transactional: 'trans' };
 
   const ICONS = {
-    overview: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>',
-    seo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>',
-    content: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>',
-    ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>',
-    competitors: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
+    overview: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>',
+    seo: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>',
+    content: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>',
+    ai: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>',
+    competitors: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
+    calendar: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
+    user: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>',
+    target: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>',
+    tag: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>',
+    note: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>',
   };
+
+  const PLATFORM_NAMES = { chat_gpt: 'ChatGPT', perplexity: 'Perplexity', gemini: 'Gemini', copilot: 'Copilot' };
+
+  function platformName(id) {
+    const key = String(id || '').toLowerCase();
+    return PLATFORM_NAMES[key] || String(id || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  }
 
   const MODULES = [
     {
@@ -100,6 +112,84 @@
     return String(pos);
   }
 
+  // Shared date formatter: ISO datetimes, ISO dates and DD/MM/YYYY all render
+  // as "Aug 26, 2026"; datetimes become "Aug 26, 2026 · 04:23 UTC".
+  var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  function parseDay(v) {
+    if (!v) return null;
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?/);
+    if (m) {
+      if (m[4]) return { d: new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0))), time: true };
+      return { d: new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])), time: false };
+    }
+    m = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/);
+    if (m) return { d: new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])), time: false };
+    return null;
+  }
+
+  function fmtDate(v) {
+    const p = parseDay(v);
+    if (!p || isNaN(p.d)) return String(v || '');
+    return MONTHS_SHORT[p.d.getUTCMonth()] + ' ' + p.d.getUTCDate() + ', ' + p.d.getUTCFullYear();
+  }
+
+  function fmtDateTime(v) {
+    const p = parseDay(v);
+    if (!p || isNaN(p.d)) return String(v || '');
+    const base = MONTHS_SHORT[p.d.getUTCMonth()] + ' ' + p.d.getUTCDate() + ', ' + p.d.getUTCFullYear();
+    if (!p.time) return base;
+    const hh = String(p.d.getUTCHours()).padStart(2, '0');
+    const mm = String(p.d.getUTCMinutes()).padStart(2, '0');
+    return base + ' · ' + hh + ':' + mm + ' UTC';
+  }
+
+  // Humanize any ISO dates embedded in a free-text string.
+  function fmtDatesInText(s) {
+    return String(s || '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, function (d) { return fmtDate(d); });
+  }
+
+  // ---- toast notifications (replaces alert()) ----
+  function toast(message, opts) {
+    opts = opts || {};
+    let stack = document.getElementById('toast-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'toast-stack';
+      stack.setAttribute('role', 'status');
+      stack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(stack);
+    }
+    const el = document.createElement('div');
+    el.className = 'toast ' + (opts.type === 'error' ? 'toast-error' : 'toast-success');
+    const msg = document.createElement('span');
+    msg.className = 'toast-msg';
+    msg.textContent = message;
+    el.appendChild(msg);
+    if (typeof opts.retry === 'function') {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'toast-retry';
+      btn.textContent = 'Retry';
+      btn.addEventListener('click', function () {
+        dismiss();
+        opts.retry();
+      });
+      el.appendChild(btn);
+    }
+    stack.appendChild(el);
+    let timer = setTimeout(dismiss, 5000);
+    function dismiss() {
+      clearTimeout(timer);
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+    el.addEventListener('click', function (e) {
+      if (e.target === el || e.target === msg) dismiss();
+    });
+    return dismiss;
+  }
+
   function intentHtml(intentJson) {
     let flags = {};
     try { flags = JSON.parse(intentJson || '{}'); } catch (e) {}
@@ -148,53 +238,106 @@
     return res.json();
   }
 
+  function errMsg(e) {
+    var m = String((e && e.message) || e || '');
+    if (/<[a-z!/][\s\S]*>/i.test(m)) {
+      // server returned an HTML error page — keep only the status code
+      var status = m.match(/^\d{3}/);
+      m = status ? status[0] + ' — the server returned an error page' : 'The server returned an error page';
+    }
+    m = m.replace(/\s+/g, ' ').trim();
+    if (!m) m = 'Something went wrong';
+    if (m.length > 160) m = m.slice(0, 157) + '…';
+    return m;
+  }
+
   function errorCard(message) {
-    return '<div class="card" style="color:var(--rose)"><b>Error</b><p class="sub">' + esc(message) + '</p></div>';
+    return '<div class="card" style="color:var(--rose)"><b>Couldn\'t load this panel</b><p class="sub">' + esc(errMsg(message)) + '</p><p class="sub">Reopen the panel to try again.</p></div>';
   }
 
   function stampHtml(dayText) {
-    return dayText ? '<div class="panel-stamp">Data as of ' + esc(dayText) + '</div>' : '';
+    return dayText ? '<div class="panel-stamp">Data as of ' + esc(fmtDate(dayText)) + '</div>' : '';
   }
 
   // ---------------------------------------------------------------- summary
   const ACTION_TYPE_META = {
-    rank_drop: { icon: '▼', cls: 'action-rank_drop' },
-    freshness: { icon: '◷', cls: 'action-freshness' },
-    llm_loss: { icon: '◈', cls: 'action-llm_loss' },
-    backlink_lost: { icon: '◉', cls: 'action-backlink_lost' },
-    competitor_change: { icon: '◆', cls: 'action-competitor_change' },
+    rank_drop: { icon: '▼', cls: 'action-rank_drop', sev: 'Rank drop' },
+    freshness: { icon: '◷', cls: 'action-freshness', sev: 'Stale content' },
+    llm_loss: { icon: '◈', cls: 'action-llm_loss', sev: 'AI visibility' },
+    backlink_lost: { icon: '◉', cls: 'action-backlink_lost', sev: 'Backlink' },
+    competitor_change: { icon: '◆', cls: 'action-competitor_change', sev: 'Competitor' },
   };
+
+  function actionLinkLabel(link) {
+    const s = String(link || '').replace(/^#\//, '');
+    const parts = s.split('/');
+    let found = findSection(parts[0]);
+    if (!found && parts.length > 1) found = findSection(parts[1]);
+    if (found) return found.section.label;
+    const map = { backlinks: 'Backlinks', freshness: 'Freshness Queue', llm: 'AI Visibility', rank: 'Rank Tracker', competitor: 'Competitor Tracker', summary: 'Executive Summary' };
+    return map[parts[0]] || 'Details';
+  }
 
   function renderActionDigest(actions, generatedAt) {
     if (!actions || !actions.length) {
       return '<div class="card action-digest"><b>Urgent actions</b><p class="sub">No urgent actions this week.</p></div>';
     }
-    const sorted = actions.slice().sort(function (a, b) { return (b.priority || 0) - (a.priority || 0); });
+    // Dedupe identical rows and repair placeholder "(total)" titles using the
+    // raw event payload (a.data) — aggregate rows have no entity, so say so.
+    const seen = {};
+    const clean = [];
+    actions.forEach(function (a) {
+      let title = a.title || '';
+      let detail = a.detail || '';
+      const d = a.data || {};
+      if (title.indexOf('(total)') > -1) {
+        if (d.domain && d.domain !== '(total)') {
+          title = title.replace('(total)', d.domain);
+        } else if (a.type === 'backlink_lost') {
+          title = 'Lost referring domains (API aggregate)';
+          detail = (d.rank ? fmtNum(d.rank) + ' domains lost · ' : '') + (d.day || '');
+        } else {
+          return; // placeholder row with no entity — drop it
+        }
+      }
+      const key = a.type + '|' + title + '|' + detail;
+      if (seen[key]) return;
+      seen[key] = 1;
+      clean.push({ a: a, title: title, detail: detail });
+    });
+    const sorted = clean.slice().sort(function (x, y) { return (y.a.priority || 0) - (x.a.priority || 0); });
     const top = sorted.slice(0, 12);
-    const rows = top.map(function (a) {
-      const meta = ACTION_TYPE_META[a.type] || { icon: '•', cls: 'action-other' };
-      return '<div class="action-row ' + esc(meta.cls) + '" data-link="' + esc(a.link || '') + '">' +
-        '<span class="action-badge">' + esc(meta.icon) + '</span>' +
-        '<div class="action-body"><div class="action-title">' + esc(a.title) + '</div>' +
-        '<div class="action-detail sub">' + esc(a.detail || '') + '</div></div></div>';
+    const rows = top.map(function (item) {
+      const a = item.a;
+      const meta = ACTION_TYPE_META[a.type] || { icon: '•', cls: 'action-other', sev: 'Notice' };
+      const link = a.link || '';
+      return '<a class="action-row ' + esc(meta.cls) + '" href="' + esc(link || '#/overview/summary') + '">' +
+        '<span class="action-side"><span class="action-badge" aria-hidden="true">' + esc(meta.icon) + '</span>' +
+        '<span class="action-sev">' + esc(meta.sev) + '</span></span>' +
+        '<span class="action-body"><span class="action-title">' + esc(item.title) + '</span>' +
+        '<span class="action-detail sub">' + esc(fmtDatesInText(item.detail)) + '</span></span>' +
+        '<span class="action-link">View in ' + esc(actionLinkLabel(link)) + ' →</span></a>';
     }).join('');
     return '<div class="card action-digest"><b>Urgent actions</b>' + rows +
-      '<p class="sub">Generated ' + esc(generatedAt || '—') + '</p></div>';
+      '<p class="sub">Generated ' + esc(generatedAt ? fmtDateTime(generatedAt) : '—') + '</p></div>';
   }
 
   function renderAnnotations(list) {
     const today = new Date().toISOString().slice(0, 10);
     const rows = (list || []).map(function (a) {
       return '<div class="annotation-row">' +
-        '<span class="annotation-day">' + esc(a.day || '') + '</span>' +
+        '<span class="annotation-day">' + esc(fmtDate(a.day) || '') + '</span>' +
         '<span class="annotation-label chip">' + esc(a.label || '') + '</span>' +
         '<span class="annotation-note">' + esc(a.note || '') + '</span></div>';
     }).join('');
     return '<div class="card annotations-card"><b>Annotations</b>' +
       '<form class="annotation-form">' +
-      '<input type="date" name="day" value="' + esc(today) + '" required>' +
-      '<input type="text" name="label" placeholder="Label" required>' +
-      '<textarea name="note" placeholder="Note…" rows="1"></textarea>' +
+      '<label class="visually-hidden" for="ann-day">Date</label>' +
+      '<input type="date" id="ann-day" name="day" value="' + esc(today) + '" required>' +
+      '<label class="visually-hidden" for="ann-label">Label</label>' +
+      '<input type="text" id="ann-label" name="label" placeholder="Label" required>' +
+      '<label class="visually-hidden" for="ann-note">Note</label>' +
+      '<textarea id="ann-note" name="note" placeholder="Note…" rows="1"></textarea>' +
       '<button type="submit">Add annotation</button></form>' +
       '<div class="annotation-list">' + (rows || '<p class="sub">No annotations yet.</p>') + '</div></div>';
   }
@@ -223,7 +366,7 @@
       if (totalCount) {
         cards.push([
           esc(String(totalTop3)),
-          'keywords in Google top 3<br>' + esc(String(totalTop10)) + ' in top 10 · ' + esc(String(totalTop50)) + ' in top 50<br><span class="sub">' + esc(String(totalRanked)) + '/' + esc(String(totalCount)) + ' ranked' + (latestDay ? ' (' + esc(latestDay) + ')' : '') + '</span>'
+          'keywords in Google top 3<br>' + esc(String(totalTop10)) + ' in top 10 · ' + esc(String(totalTop50)) + ' in top 50<br><span class="sub">' + esc(String(totalRanked)) + '/' + esc(String(totalCount)) + ' ranked' + (latestDay ? ' (' + esc(fmtDate(latestDay)) + ')' : '') + '</span>'
         ]);
       }
 
@@ -231,9 +374,10 @@
         const m = data.biggest_mover;
         const cls = m.delta > 0 ? 'up' : 'down';
         const arrow = m.delta > 0 ? '▲' : '▼';
+        const propLabel = PROPERTIES[m.property]?.label || m.property;
         cards.push([
           '<span class="delta ' + cls + '">' + arrow + Math.abs(m.delta) + '</span>',
-          'biggest rank move vs previous check<br>' + esc((m.keyword || '').slice(0, 60)) + '<br><span class="sub">' + esc(PROPERTIES[m.property]?.label || m.property) + '</span>'
+          'biggest rank move vs previous check<br>' + esc((m.keyword || '').slice(0, 60)) + '<br><span class="kpi-prop">' + esc(propLabel) + '</span> <span class="sub">property</span>'
         ]);
       }
 
@@ -245,7 +389,7 @@
           const net = (bl.refdomains || 0) - (prev.refdomains || 0);
           const cls = net >= 0 ? 'up' : 'down';
           const arrow = net >= 0 ? '+' : '-';
-          delta = '<span class="delta ' + cls + '">' + arrow + esc(fmtNum(Math.abs(net))) + ' vs ' + esc(prev.day) + '</span>';
+          delta = '<span class="delta ' + cls + '">' + arrow + esc(fmtNum(Math.abs(net))) + ' vs ' + esc(fmtDate(prev.day)) + '</span>';
         }
         cards.push([esc(fmtNum(bl.refdomains)), 'referring domains<br>' + delta]);
       }
@@ -253,37 +397,26 @@
       if (data.llm?.day) {
         cards.push([
           esc(String(data.llm.sov) + '%'),
-          'AI share of voice<br><span class="sub">' + esc(data.llm.day) + ' · ' + esc(String(data.llm.count)) + ' answers</span>'
+          'AI share of voice<br><span class="sub">' + esc(fmtDate(data.llm.day)) + ' · ' + esc(String(data.llm.count)) + ' answers</span>'
         ]);
       }
 
-      if (!cards.length) {
-        el.innerHTML = '<div class="card">No summary data available yet.</div>';
-        return;
-      }
+      const kpiHtml = cards.length
+        ? '<div class="kpis">' + cards.map(function (c) {
+            return '<div class="kpi"><div class="num">' + c[0] + '</div><div class="label">' + c[1] + '</div></div>';
+          }).join('') + '</div>'
+        : '<div class="card">No summary data available yet.</div>';
 
-      const kpiHtml = cards.map(function (c) {
-        return '<div class="kpi"><div class="num">' + c[0] + '</div><div class="label">' + c[1] + '</div></div>';
-      }).join('');
-
-      el.innerHTML = '<h2>Executive summary</h2><div class="kpis">' + kpiHtml + '</div>' +
+      el.innerHTML = '<h2>Executive summary</h2>' +
         renderActionDigest(actionsData.actions, actionsData.generated_at) +
+        kpiHtml +
         renderAnnotations(annotationsData.annotations) +
         stampHtml(latestDay);
-
-      // Action digest navigation
-      el.querySelectorAll('.action-row').forEach(function (row) {
-        row.addEventListener('click', function () {
-          const link = row.getAttribute('data-link');
-          if (link && link.startsWith('#')) location.hash = link;
-        });
-      });
 
       // Annotation form
       const form = el.querySelector('.annotation-form');
       if (form) {
-        form.addEventListener('submit', async function (e) {
-          e.preventDefault();
+        async function submitAnnotation() {
           const day = form.querySelector('[name="day"]').value;
           const label = form.querySelector('[name="label"]').value;
           const note = form.querySelector('[name="note"]').value;
@@ -294,7 +427,7 @@
             if (listEl) {
               const rows = (fresh.annotations || []).map(function (a) {
                 return '<div class="annotation-row">' +
-                  '<span class="annotation-day">' + esc(a.day || '') + '</span>' +
+                  '<span class="annotation-day">' + esc(fmtDate(a.day) || '') + '</span>' +
                   '<span class="annotation-label chip">' + esc(a.label || '') + '</span>' +
                   '<span class="annotation-note">' + esc(a.note || '') + '</span></div>';
               }).join('');
@@ -302,9 +435,14 @@
             }
             form.reset();
             form.querySelector('[name="day"]').value = new Date().toISOString().slice(0, 10);
+            toast('Annotation added.');
           } catch (err) {
-            alert('Failed to add annotation: ' + err.message);
+            toast('Failed to add annotation: ' + errMsg(err), { type: 'error', retry: submitAnnotation });
           }
+        }
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          submitAnnotation();
         });
       }
     } catch (e) {
@@ -337,7 +475,7 @@
       }).join('');
     }
 
-    return '<div class="card cannibalization"><b>Cannibalization check · ' + esc(c.latest_day || '—') + '</b>' +
+    return '<div class="card cannibalization"><b>Cannibalization check · ' + esc(c.latest_day ? fmtDate(c.latest_day) : '—') + '</b>' +
       (hasDilution ? '<table><thead><tr><th>Pages ranking for 5+ keywords</th><th>Keywords</th><th>Keyword list</th></tr></thead><tbody>' + dilutionRows + '</tbody></table>' : '') +
       (hasFlips ? '<table><thead><tr><th>Keyword that changed URL</th><th>Previous URL</th><th>Current URL</th></tr></thead><tbody>' + flipRows + '</tbody></table>' : '') +
       '</div>';
@@ -415,7 +553,7 @@
       '<th class="sortable" data-sort="kd">KD <span class="arrow"></span></th>' +
       '<th>Intent</th><th>Branded</th><th>URL</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>' +
-      '<p class="sub">Google US top 100 for ' + esc(cfg.domain) + ' — current: ' + esc(data.latest_day || '—') +
+      '<p class="sub">Google US top 100 for ' + esc(cfg.domain) + ' — current: ' + esc(data.latest_day ? fmtDate(data.latest_day) : '—') +
       (data.previous_day ? ', previous: ' + esc(data.previous_day) : '') +
       '. Δ = position change vs previous check (gains on top when sorted). Trend = weekly positions, oldest to latest. Volume / KD / intent from keyword_meta. — = unranked or no data. ' +
       '<span class="no-print">Type to filter, pick a tag or quick filter, click a column header to sort.</span></p>' +
@@ -480,7 +618,7 @@
 
   function drGaugeHtml(score) {
     const pct = Math.min(100, Math.max(0, score));
-    const color = pct >= 70 ? '#059669' : pct >= 40 ? '#d97706' : '#dc2626';
+    const color = pct >= 70 ? '#047857' : pct >= 40 ? '#d97706' : '#dc2626';
     return '<div class="dr-gauge"><svg viewBox="0 0 36 36">' +
       '<path class="dr-ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />' +
       '<path class="dr-ring-fill" stroke="' + color + '" stroke-dasharray="' + pct + ', 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />' +
@@ -545,7 +683,7 @@
       const mx = Math.max.apply(null, snaps.map(function (r) { return r.refdomains || 0; }).concat([1]));
       const snapRows = snaps.map(function (r) {
         const label = (PROPERTIES[r.property] || { label: r.property || '—' }).label;
-        return '<tr><td><b>' + esc(r.day) + '</b></td>' +
+        return '<tr><td><b>' + esc(fmtDate(r.day)) + '</b></td>' +
           '<td>' + esc(label) + '</td>' +
           '<td class="vol">' + fmtNum(r.backlinks) + '</td>' +
           '<td class="vol">' + fmtNum(r.refdomains) + '</td>' +
@@ -606,9 +744,9 @@
     const eventRows = events.slice(0, 40).map(function (r) {
       const chip = r.event === 'new' ? '<span class="chip you">new</span>' : '<span class="chip none">lost</span>';
       if (r.domain === '(total)') {
-        return '<tr><td>' + esc(r.day) + '</td><td>' + chip + '</td><td class="sub">API aggregate count</td><td class="vol">' + esc(r.rank) + '</td></tr>';
+        return '<tr><td>' + esc(fmtDate(r.day)) + '</td><td>' + chip + '</td><td class="sub">API aggregate count</td><td class="vol">' + esc(r.rank) + '</td></tr>';
       }
-      return '<tr><td>' + esc(r.day) + '</td><td>' + chip + '</td><td>' + esc(r.domain) + '</td><td class="vol">' + (r.rank !== null && r.rank !== undefined ? esc(String(r.rank)) : '—') + '</td></tr>';
+      return '<tr><td>' + esc(fmtDate(r.day)) + '</td><td>' + chip + '</td><td>' + esc(r.domain) + '</td><td class="vol">' + (r.rank !== null && r.rank !== undefined ? esc(String(r.rank)) : '—') + '</td></tr>';
     }).join('');
     return '<div class="card"><b>Recent new / lost referring domains</b><table>' +
       '<tr><th>date</th><th>event</th><th>domain</th><th>rank</th></tr>' + eventRows + '</table>' +
@@ -666,7 +804,7 @@
       const searchBox = kind === 'backlink' ? '<input type="search" class="bl-search" placeholder="Filter ' + rows.length + ' backlinks…" data-blsearch="' + esc(p) + '">' : '';
       return '<div class="bl-prop' + (i === 0 ? ' active' : '') + '" id="blprop-' + esc(p) + '-' + kind + '">' +
         '<div class="card">' + searchBox + table +
-        '<p class="sub">Latest snapshot ' + esc(day) + ' · ' + rows.length + ' rows from DataForSEO.</p></div></div>';
+        '<p class="sub">Latest snapshot ' + esc(fmtDate(day)) + ' · ' + rows.length + ' rows from DataForSEO.</p></div></div>';
     }).join('');
 
     return tabBtns + panels;
@@ -727,7 +865,7 @@
       const searchBox = '<input type="search" class="bl-search" placeholder="Filter ' + rows.length + ' pages…" data-blsearch="' + esc(p) + '">';
       return '<div class="bl-prop' + (i === 0 ? ' active' : '') + '" id="blprop-' + esc(p) + '-' + kind + '">' +
         '<div class="card">' + searchBox + table +
-        '<p class="sub">Latest snapshot ' + esc(day) + ' · ' + rows.length + ' pages from DataForSEO.</p></div></div>';
+        '<p class="sub">Latest snapshot ' + esc(fmtDate(day)) + ' · ' + rows.length + ' pages from DataForSEO.</p></div></div>';
     }).join('');
 
     return tabBtns + panels;
@@ -854,7 +992,7 @@
           deltaHtml = '<span class="sub">from ' + fmtNum(prev) + '</span>';
         }
         return '<tr data-volume="' + esc(String(r.ai_search_volume || 0)) + '" data-delta="' + esc(String(delta === null || delta === undefined ? '' : delta)) + '">' +
-          '<td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
+          '<td>' + esc(r.query) + '</td><td><span class="chip">' + esc(platformName(r.platform)) + '</span></td>' +
           '<td class="vol num">' + fmtNum(r.ai_search_volume) + '</td>' +
           '<td class="num discovered-delta">' + deltaHtml + '</td></tr>';
       }).join('');
@@ -869,7 +1007,7 @@
     if (data.silent && data.silent.rows && data.silent.rows.length) {
       const trend = data.silent.previous_count ? ' · was ' + fmtNum(data.silent.previous_count) + ' at previous check' : '';
       const rows = data.silent.rows.map(function (r) {
-        return '<tr><td>' + esc(r.query) + '</td><td><span class="chip">' + esc(r.platform) + '</span></td>' +
+        return '<tr><td>' + esc(r.query) + '</td><td><span class="chip">' + esc(platformName(r.platform)) + '</span></td>' +
           '<td class="vol">' + fmtNum(r.ai_search_volume) + '</td></tr>';
       }).join('');
       html += '<h2>Silent citations — your content, no brand credit <span class="sub">(' + esc(String(data.silent.count)) + ' found' + esc(trend) + ')</span></h2>' +
@@ -879,14 +1017,14 @@
 
     // Latest run
     if (data.by_prompt && Object.keys(data.by_prompt).length) {
-      html += '<h2>Latest LLM run — ' + esc(data.latest_day || '—') + '</h2>';
+      html += '<h2>Latest LLM run — ' + esc(data.latest_day ? fmtDate(data.latest_day) : '—') + '</h2>';
       for (const [prompt, entries] of Object.entries(data.by_prompt)) {
         const chips = entries.map(function (e) {
-          return '<div><span class="plat">' + esc(e.platform) + '</span> ' + brandChips(e.mentions, brands, you) +
+          return '<div><span class="plat">' + esc(platformName(e.platform)) + '</span> ' + brandChips(e.mentions, brands, you) +
             (e.cited_mine ? ' <span class="chip cite">your site cited</span>' : '') + '</div>';
         }).join('');
         const answers = entries.map(function (e) {
-          return '<div><span class="plat">' + esc(e.platform) + '</span></div>' +
+          return '<div><span class="plat">' + esc(platformName(e.platform)) + '</span></div>' +
             '<div class="answer">' + esc((e.answer || '').slice(0, 4000)) + '</div>';
         }).join('');
         html += '<div class="card"><b>' + esc(prompt) + '</b>' + chips +
@@ -974,7 +1112,7 @@
           const cited = p.cited_count ? '<span class="chip cite">cited ' + p.cited_count + '/' + p.total_answers + '</span>' : '<span class="sub">—</span>';
           return '<tr>' +
             '<td>' + esc(p.prompt) + '</td>' +
-            '<td>' + esc((p.platforms || []).join(', ')) + '</td>' +
+            '<td>' + esc((p.platforms || []).map(platformName).join(', ')) + '</td>' +
             '<td>' + youChip + '</td>' +
             '<td>' + (comps || '<span class="sub">—</span>') + '</td>' +
             '<td>' + cited + '</td></tr>';
@@ -997,7 +1135,7 @@
   function initLlmInteractions() {
     // Copy brief buttons
     document.querySelectorAll('.gap-brief').forEach(function (btn) {
-      btn.addEventListener('click', async function () {
+      async function copyBrief() {
         var row = btn.closest('tr');
         var prop = row ? row.getAttribute('data-property') : '';
         var prompt = row ? row.getAttribute('data-prompt') : '';
@@ -1011,9 +1149,10 @@
           btn.textContent = 'Copied';
           setTimeout(function () { btn.textContent = orig; }, 1200);
         } catch (err) {
-          alert('Could not copy brief: ' + err.message);
+          toast('Could not copy brief: ' + errMsg(err), { type: 'error', retry: copyBrief });
         }
-      });
+      }
+      btn.addEventListener('click', copyBrief);
     });
 
     // Discovered table sorting
@@ -1115,7 +1254,7 @@
       const needsAction = Object.entries(actionCounts).filter(function (e) { return e[0] !== 'MONITOR'; }).reduce(function (s, e) { return s + e[1]; }, 0);
 
       const cards = [
-        ['Pages monitored', fmtNum(total), 'as of ' + esc(data.day || '')],
+        ['Pages monitored', fmtNum(total), 'as of ' + esc(data.day ? fmtDate(data.day) : '')],
         ['High decay risk', fmtNum(highRisk), (total ? (highRisk / total * 100).toFixed(1) : 0) + '% of pages'],
         ['Average age', fmtNum(avgAge), 'days since last update'],
         ['Needs action', fmtNum(needsAction), 'refresh/update/prune/fix'],
@@ -1222,7 +1361,7 @@
     rows.forEach(function (r) {
       var saveBtn = r.querySelector('.queue-save');
       if (!saveBtn) return;
-      saveBtn.addEventListener('click', async function () {
+      async function saveRow() {
         var url = r.getAttribute('data-url');
         var owner = r.querySelector('.queue-owner').value;
         var status = r.querySelector('.queue-status').value;
@@ -1234,10 +1373,12 @@
             saved.style.display = 'inline';
             setTimeout(function () { saved.style.display = ''; }, 1500);
           }
+          toast('Freshness item saved.');
         } catch (err) {
-          alert('Save failed: ' + err.message);
+          toast('Save failed: ' + errMsg(err), { type: 'error', retry: saveRow });
         }
-      });
+      }
+      saveBtn.addEventListener('click', saveRow);
     });
 
     applyFilter();
@@ -1493,7 +1634,7 @@
       return '<option value="' + esc(e[0]) + '">' + esc(e[1].name || e[0]) + '</option>';
     }).join('');
     const typeOptions = COMPETITOR_TYPES.map(function (e) { return '<option value="' + esc(e[0]) + '">' + esc(e[1]) + '</option>'; }).join('');
-    const lastRun = data.changes && data.changes.length ? data.changes[0].timestamp.slice(0, 19).replace('T', ' ') + ' UTC' : '—';
+    const lastRun = data.changes && data.changes.length ? fmtDateTime(data.changes[0].timestamp) : '—';
     const payload = esc(JSON.stringify({ property: data.property, self_domain: data.self_domain, competitors: competitors, changes: data.changes || [] }));
 
     return '<div class="competitor-box" data-competitor-json="' + payload + '">' +
@@ -1556,7 +1697,7 @@
 
       const panelsHtml = tabs.map(function (t, i) {
         return '<div class="comp-prop' + (i === 0 ? ' active' : '') + '" id="comp-' + esc(t.key) + '">' +
-          '<h2>Competitor Tracker — ' + esc(t.data.label || t.label) + ' <span class="sub">(last run: ' + esc((t.data.changes && t.data.changes[0]) ? t.data.changes[0].timestamp.slice(0, 19).replace('T', ' ') + ' UTC' : '—') + ')</span></h2>' +
+          '<h2>Competitor Tracker — ' + esc(t.data.label || t.label) + ' <span class="sub">(last run: ' + esc((t.data.changes && t.data.changes[0]) ? fmtDateTime(t.data.changes[0].timestamp) : '—') + ')</span></h2>' +
           renderCompetitorBox(t.data) + '</div>';
       }).join('');
 
@@ -1682,11 +1823,25 @@
     }
 
     document.querySelectorAll('.vc-rail-item').forEach(function (el) {
-      el.classList.toggle('is-active', el.getAttribute('data-module') === mod.id);
+      var active = el.getAttribute('data-module') === mod.id;
+      el.classList.toggle('is-active', active);
+      if (active) el.setAttribute('aria-current', 'page');
+      else el.removeAttribute('aria-current');
     });
     document.querySelectorAll('.vc-subnav-item').forEach(function (el) {
-      el.classList.toggle('is-active', el.getAttribute('data-section') === sec.id);
+      var active = el.getAttribute('data-section') === sec.id;
+      el.classList.toggle('is-active', active);
+      if (active) el.setAttribute('aria-current', 'page');
+      else el.removeAttribute('aria-current');
     });
+
+    // Full gradient hero only on the Executive Summary; slim header elsewhere.
+    var hero = document.querySelector('.hero');
+    if (hero) {
+      hero.classList.toggle('hero-slim', sec.panel !== 'summary');
+      var ctx = hero.querySelector('.hero-context');
+      if (ctx) ctx.textContent = mod.label + ' · ' + sec.label;
+    }
 
     document.querySelectorAll('.panel').forEach(function (el) { el.classList.remove('active'); });
     var panelEl = document.getElementById('panel-' + sec.panel);
@@ -2078,7 +2233,7 @@
           '<td>' + (tags || '<span class="sub">—</span>') + '</td>' +
           '<td class="num">' + fmtNum(r.word_count || 0) + '</td>' +
           '<td class="num"><span title="internal / external">' + fmtNum(r.internal_links || 0) + ' / ' + fmtNum(r.external_links || 0) + '</span></td>' +
-          '<td>' + (r.published_date ? esc(r.published_date) : '—') + '</td>' +
+          '<td>' + (r.published_date ? esc(fmtDate(r.published_date)) : '—') + '</td>' +
           '<td>' + updatedText + '</td>' +
           '<td>' + statusChip(r.status) + '</td></tr>';
       }).join('');
@@ -2314,12 +2469,22 @@
       }).join('');
 
       function cardHtml(r) {
-        const due = r.due_date ? '<div class="cp-due">📅 ' + esc(r.due_date) + '</div>' : '';
-        const owner = r.owner ? '<div class="cp-owner">👤 ' + esc(r.owner) + '</div>' : '';
-        const kw = r.target_keyword ? '<div class="cp-kw">🎯 ' + esc(r.target_keyword) + '</div>' : '';
-        const cluster = r.cluster ? '<div class="cp-cluster">🏷️ ' + esc(r.cluster) + '</div>' : '';
-        const briefIcon = r.brief_goal || r.brief_outline ? '<span class="cp-brief-icon" title="Brief attached">📝</span>' : '';
-        return '<div class="cp-card" data-id="' + esc(r.id) + '" data-property="' + esc(r.property || 'vantagecircle') + '" data-stage="' + esc(r.stage) + '" data-due="' + esc(r.due_date || '') + '" draggable="true">' +
+        const due = r.due_date ? '<div class="cp-due">' + ICONS.calendar + ' ' + esc(fmtDate(r.due_date)) + '</div>' : '';
+        const owner = r.owner ? '<div class="cp-owner">' + ICONS.user + ' ' + esc(r.owner) + '</div>' : '';
+        const kw = r.target_keyword ? '<div class="cp-kw">' + ICONS.target + ' ' + esc(r.target_keyword) + '</div>' : '';
+        const cluster = r.cluster ? '<div class="cp-cluster">' + ICONS.tag + ' ' + esc(r.cluster) + '</div>' : '';
+        const briefIcon = r.brief_goal || r.brief_outline ? '<span class="cp-brief-icon" title="Brief attached">' + ICONS.note + '</span>' : '';
+        const stageIdx = PIPELINE_STAGES.findIndex(function (s) { return s.id === r.stage; });
+        const prev = stageIdx > 0 ? PIPELINE_STAGES[stageIdx - 1] : null;
+        const next = stageIdx > -1 && stageIdx < PIPELINE_STAGES.length - 1 ? PIPELINE_STAGES[stageIdx + 1] : null;
+        const stageBtns = (prev || next)
+          ? '<div class="cp-stage-btns no-print">' +
+            (prev ? '<button type="button" class="cp-stage-btn" data-move="' + esc(prev.id) + '" aria-label="Move to ' + esc(prev.label) + '" title="Move to ' + esc(prev.label) + '">‹</button>' : '') +
+            (next ? '<button type="button" class="cp-stage-btn" data-move="' + esc(next.id) + '" aria-label="Move to ' + esc(next.label) + '" title="Move to ' + esc(next.label) + '">›</button>' : '') +
+            '</div>'
+          : '';
+        return '<div class="cp-card" data-id="' + esc(r.id) + '" data-property="' + esc(r.property || 'vantagecircle') + '" data-stage="' + esc(r.stage) + '" data-due="' + esc(r.due_date || '') + '" data-title="' + esc(r.title || '') + '" draggable="true">' +
+          stageBtns +
           '<div class="cp-title">' + esc(r.title) + ' ' + briefIcon + '</div>' +
           (r.url ? '<a href="' + esc(r.url) + '" target="_blank" class="sub" style="font-size:11px">' + esc(r.url.replace(/^https?:\/\//, '').slice(0, 40)) + '</a>' : '') +
           '<div class="cp-meta">' + owner + due + kw + cluster + '</div>' +
@@ -2327,7 +2492,7 @@
       }
 
       const columnsHtml = PIPELINE_STAGES.map(function (s) {
-        const items = (byStage[s.id] || []).filter(function (r) { return r.property === currentProp; });
+        const items = byStage[s.id] || [];
         return '<div class="cp-col" data-stage="' + esc(s.id) + '">' +
           '<div class="cp-col-head">' + esc(s.label) + ' <span class="cp-count">' + items.length + '</span></div>' +
           '<div class="cp-cards">' + items.map(cardHtml).join('') + '</div>' +
@@ -2335,7 +2500,7 @@
       }).join('');
 
       function monthKey(d) { return d ? d.slice(0, 7) : '(no date)'; }
-      const calendarRows = rows.filter(function (r) { return r.property === currentProp; }).sort(function (a, b) { return (a.due_date || '').localeCompare(b.due_date || ''); });
+      const calendarRows = rows.slice().sort(function (a, b) { return (a.due_date || '').localeCompare(b.due_date || ''); });
       const byMonth = {};
       calendarRows.forEach(function (r) {
         const m = monthKey(r.due_date);
@@ -2429,9 +2594,30 @@
     if (propSel) propSel.addEventListener('change', filter);
     if (search) search.addEventListener('input', filter);
 
+    // Keyboard-accessible stage moves (same save path as a drag-drop would use)
+    async function moveCard(card, stageId) {
+      const id = card.getAttribute('data-id');
+      const title = card.getAttribute('data-title') || '';
+      const stage = PIPELINE_STAGES.find(function (s) { return s.id === stageId; });
+      try {
+        const res = await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, title: title, stage: stageId }) });
+        if (!res.ok) throw new Error(res.status + ' ' + (await res.text().catch(function () { return ''; })));
+        toast('Moved "' + title.slice(0, 40) + '" to ' + (stage ? stage.label : stageId) + '.');
+        loadContentPipeline();
+      } catch (err) {
+        toast('Move failed: ' + errMsg(err), { type: 'error', retry: function () { moveCard(card, stageId); } });
+      }
+    }
+    wrap.querySelectorAll('.cp-stage-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        const card = btn.closest('.cp-card');
+        if (card) moveCard(card, btn.getAttribute('data-move'));
+      });
+    });
+
     if (form) {
-      form.addEventListener('submit', async function (e) {
-        e.preventDefault();
+      async function submitPipelineItem() {
         const fd = new FormData(form);
         const body = {};
         ['title', 'property', 'content_type', 'stage', 'owner', 'due_date', 'target_keyword', 'cluster', 'notes', 'brief_goal', 'brief_outline', 'brief_keywords', 'brief_competitors'].forEach(function (k) {
@@ -2442,14 +2628,22 @@
         if (wc) body.brief_word_count = parseInt(wc, 10);
         if (!body.property) body.property = 'vantagecircle';
         try {
-          await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const res = await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          if (!res.ok) throw new Error(res.status + ' ' + (await res.text().catch(function () { return ''; })));
           form.reset();
+          toast('Pipeline item added.');
           loadContentPipeline();
         } catch (err) {
-          alert('Save failed: ' + err.message);
+          toast('Save failed: ' + errMsg(err), { type: 'error', retry: submitPipelineItem });
         }
+      }
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        submitPipelineItem();
       });
     }
+
+    filter();
   }
 
   // ---------------------------------------------------------------- content clusters
@@ -3175,7 +3369,7 @@
       rows.forEach(function (r) { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
 
       const kpiHtml = '<div class="kpis">' +
-        '<div class="kpi"><div class="num">' + fmtNum(rows.length) + '</div><div class="label">Tracked keywords</div></div>' +
+        '<div class="kpi"><div class="num">' + fmtNum(rows.length) + '</div><div class="label">In research list (not rank-tracked)</div></div>' +
         '<div class="kpi"><div class="num">' + fmtNum(byStatus.targeting || 0) + '</div><div class="label">Targeting</div></div>' +
         '<div class="kpi"><div class="num">' + fmtNum(byStatus.ranking || 0) + '</div><div class="label">Ranking</div></div>' +
         '<div class="kpi"><div class="num">' + fmtNum(gaps.length) + '</div><div class="label">Gaps from rank data</div></div>' +
@@ -3198,7 +3392,7 @@
 
       const gapRows = gaps.slice(0, 50).map(function (r) {
         return '<tr><td>' + esc(r.keyword) + '</td><td>' + esc(r.property) + '</td><td class="num">' + fmtNum(r.rank_signals || 0) + '</td>' +
-          '<td><button class="kw-add" data-keyword="' + esc(r.keyword) + '" data-property="' + esc(r.property) + '">Track</button></td></tr>';
+          '<td><button class="kw-add" data-keyword="' + esc(r.keyword) + '" data-property="' + esc(r.property) + '">Add to research list</button></td></tr>';
       }).join('');
 
       const filterHtml = '<div class="table-tools no-print kw-tools">' +
@@ -3244,7 +3438,7 @@
       function discoveryBulk() {
         return '<div class="kw-discovery-bulk no-print">' +
           '<label class="kw-d-select-all-label"><input type="checkbox" class="kw-d-select-all"> Select all visible</label>' +
-          '<button class="kw-d-track" type="button">Add selected to tracker</button>' +
+          '<button class="kw-d-track" type="button">Add selected to research list</button>' +
           '<button class="kw-d-pipeline" type="button">Push selected to pipeline</button>' +
           '<span class="kw-d-bulk-status sub"></span></div>';
       }
@@ -3269,7 +3463,7 @@
         '<div class="kw-panel" data-panel="site">' + discoveryFilters() + discoveryBulk() + discoveryTable(true) + '</div>';
 
       const tabsHtml = '<div class="kw-tabs">' +
-        '<button class="kw-tab active" data-tab="tracked">Tracked (' + fmtNum(rows.length) + ')</button>' +
+        '<button class="kw-tab active" data-tab="tracked">In research list (' + fmtNum(rows.length) + ')</button>' +
         '<button class="kw-tab" data-tab="ideas">Ideas</button>' +
         '<button class="kw-tab" data-tab="matching">Matching terms</button>' +
         '<button class="kw-tab" data-tab="questions">Questions</button>' +
@@ -3621,25 +3815,31 @@
     });
 
     wrap.querySelectorAll('.kw-add').forEach(function (btn) {
-      btn.addEventListener('click', async function () {
+      async function addToList() {
         const body = { keyword: btn.getAttribute('data-keyword'), property: btn.getAttribute('data-property'), status: 'idea', source: 'rank_gap' };
         try {
-          await fetch('/api/keywords', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const res = await fetch('/api/keywords', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          if (!res.ok) throw new Error(res.status + ' ' + (await res.text().catch(function () { return ''; })));
           btn.textContent = 'Added';
           btn.disabled = true;
-        } catch (err) { alert('Failed: ' + err.message); }
-      });
+          toast('Added "' + body.keyword + '" to the research list.');
+        } catch (err) { toast('Failed: ' + errMsg(err), { type: 'error', retry: addToList }); }
+      }
+      btn.addEventListener('click', addToList);
     });
 
     wrap.querySelectorAll('.kw-add-pipeline').forEach(function (btn) {
-      btn.addEventListener('click', async function () {
+      async function addToPipeline() {
         const body = { title: btn.getAttribute('data-keyword'), property: btn.getAttribute('data-property'), stage: 'idea', target_keyword: btn.getAttribute('data-keyword') };
         try {
-          await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const res = await fetch('/api/content_pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          if (!res.ok) throw new Error(res.status + ' ' + (await res.text().catch(function () { return ''; })));
           btn.textContent = 'In pipeline';
           btn.disabled = true;
-        } catch (err) { alert('Failed: ' + err.message); }
-      });
+          toast('Pushed "' + body.target_keyword + '" to the content pipeline.');
+        } catch (err) { toast('Failed: ' + errMsg(err), { type: 'error', retry: addToPipeline }); }
+      }
+      btn.addEventListener('click', addToPipeline);
     });
 
     applySort();
