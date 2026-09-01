@@ -2201,15 +2201,15 @@ async function handleDomainOverview(env, url) {
   let overview = { organic_traffic: 0, organic_keywords: 0, top1: 0, top3: 0, top10: 0, top100: 0 };
   if (rankResult.status === "fulfilled") {
     for (const r of rankResult.value || []) {
-      const metrics = r.metrics?.organic || {};
-      overview.organic_traffic = metrics.etv || metrics.estimated_traffic || 0;
-      overview.organic_keywords = metrics.count || 0;
-      const pos = metrics.positions || {};
-      overview.top1 = pos.pos_1 || 0;
-      overview.top3 = pos.pos_2_3 || 0;
-      overview.top10 = pos.pos_4_10 || 0;
-      overview.top100 = (pos.pos_11_20 || 0) + (pos.pos_21_50 || 0) + (pos.pos_51_100 || 0);
-      if (r.domain_rank != null) overview.domain_rank = r.domain_rank;
+      for (const item of r.items || []) {
+        const metrics = item.metrics?.organic || {};
+        overview.organic_traffic = metrics.etv || 0;
+        overview.organic_keywords = metrics.count || 0;
+        overview.top1 = metrics.pos_1 || 0;
+        overview.top3 = metrics.pos_2_3 || 0;
+        overview.top10 = metrics.pos_4_10 || 0;
+        overview.top100 = (metrics.pos_11_20 || 0) + (metrics.pos_21_30 || 0) + (metrics.pos_31_40 || 0) + (metrics.pos_41_50 || 0) + (metrics.pos_51_60 || 0) + (metrics.pos_61_70 || 0) + (metrics.pos_71_80 || 0) + (metrics.pos_81_90 || 0) + (metrics.pos_91_100 || 0);
+      }
     }
   }
 
@@ -2242,11 +2242,10 @@ async function handleDomainOverview(env, url) {
   let backlinks = { referring_domains: 0, backlinks: 0, referring_ips: 0, referring_subnets: 0 };
   if (blResult.status === "fulfilled") {
     for (const r of blResult.value || []) {
-      const summary = r.summary || {};
-      backlinks.referring_domains = summary.referring_domains || 0;
-      backlinks.backlinks = summary.backlinks || 0;
-      backlinks.referring_ips = summary.referring_ips || 0;
-      backlinks.referring_subnets = summary.referring_subnets || 0;
+      backlinks.referring_domains = r.referring_domains || 0;
+      backlinks.backlinks = r.backlinks || 0;
+      backlinks.referring_ips = r.referring_ips || 0;
+      backlinks.referring_subnets = r.referring_subnets || 0;
     }
   }
 
