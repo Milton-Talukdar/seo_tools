@@ -2281,12 +2281,48 @@ function cacheKey(request, route) {
   return `v20:seo-suite:${route}${qs ? ":" + qs : ""}`;
 }
 
+// ---------------------------------------------------------------------- auth
+function authEnabled(env) {
+  return !!(env.ORBIT_USERNAME && env.ORBIT_PASSWORD);
+}
+
+function unauthorizedResponse(isApi) {
+  if (isApi) {
+    return Response.json({ error: "Unauthorized" }, {
+      status: 401,
+      headers: { "WWW-Authenticate": 'Basic realm="Orbit"', "Content-Type": "application/json" },
+    });
+  }
+  return new Response(
+    `<!doctype html><html><head><title>Authentication required</title><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc;color:#0f172a}.box{max-width:360px;padding:32px;background:#fff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 4px 12px rgba(15,23,42,.08)}h1{margin:0 0 8px;font-size:20px}p{margin:0;color:#64748b;line-height:1.5}</style></head><body><div class="box"><h1>Authentication required</h1><p>Please enter the username and password to access the Vantage Circle SEO Suite.</p></div></body></html>`,
+    { status: 401, headers: { "WWW-Authenticate": 'Basic realm="Orbit"', "Content-Type": "text/html" } }
+  );
+}
+
+function checkAuth(request, env) {
+  if (!authEnabled(env)) return true;
+  const auth = request.headers.get("Authorization") || "";
+  if (!auth.startsWith("Basic ")) return false;
+  try {
+    const decoded = atob(auth.slice(6));
+    const [user, pass] = decoded.split(":");
+    return user === env.ORBIT_USERNAME && pass === env.ORBIT_PASSWORD;
+  } catch (e) {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------- router
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const isApi = url.pathname.startsWith("/api/");
 
-    if (url.pathname.startsWith("/api/")) {
+    if (!checkAuth(request, env)) {
+      return unauthorizedResponse(isApi);
+    }
+
+    if (isApi) {
       try {
         const route = url.pathname.slice(5).replace(/\/$/, "") || "summary";
         if (!CACHE_TTL[route]) return jsonError("Not found", 404);
