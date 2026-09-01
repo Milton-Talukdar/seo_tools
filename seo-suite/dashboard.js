@@ -4323,6 +4323,48 @@
       });
     }
 
+    // Sort top keywords
+    const kwTable = wrap.querySelector('.do-kw-table');
+    if (kwTable) {
+      const tbody = kwTable.querySelector('tbody');
+      const ths = kwTable.querySelectorAll('th.sortable');
+      let sortKey = 'volume', sortDir = -1;
+      function doKeyVal(r, k) {
+        if (k === 'keyword') return r.cells[0].textContent.toLowerCase();
+        if (k === 'volume') return parseInt(r.getAttribute('data-volume') || '0', 10);
+        if (k === 'cpc') return parseFloat(r.getAttribute('data-cpc') || '0');
+        if (k === 'position') return parseInt(r.getAttribute('data-position') || '0', 10);
+        return 0;
+      }
+      function doCmp(a, b) {
+        const va = doKeyVal(a, sortKey), vb = doKeyVal(b, sortKey);
+        if (sortKey === 'keyword') {
+          if (va < vb) return -sortDir;
+          if (va > vb) return sortDir;
+          return 0;
+        }
+        return (va - vb) * sortDir;
+      }
+      function applyDoSort() {
+        const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+        rows.sort(doCmp);
+        rows.forEach(function (r) { tbody.appendChild(r); });
+        ths.forEach(function (th) {
+          const arr = th.querySelector('.arrow');
+          if (arr) arr.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+        });
+      }
+      ths.forEach(function (th) {
+        th.addEventListener('click', function () {
+          const k = th.getAttribute('data-sort');
+          if (k === sortKey) { sortDir = -sortDir; }
+          else { sortKey = k; sortDir = k === 'keyword' ? 1 : -1; }
+          applyDoSort();
+        });
+      });
+      applyDoSort();
+    }
+
     // Export top keywords CSV
     wrap.querySelector('.do-kw-export').addEventListener('click', function () {
       const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
