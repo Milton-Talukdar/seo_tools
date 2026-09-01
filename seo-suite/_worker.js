@@ -732,6 +732,7 @@ const CACHE_TTL = {
   "keywords/discover": 3600,
   "keywords/site": 3600,
   "keywords/overview": 3600,
+  "domain/overview": 3600,
 };
 
 function cacheEnabled(env) {
@@ -2156,6 +2157,125 @@ async function handleKeywordOverview(env, url) {
   return { keyword, country, items };
 }
 
+// ---------------------------------------------------------------- /api/domain/overview
+function cleanDomain(target) {
+  return String(target || "")
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/.*$/, "")
+    .toLowerCase()
+    .trim();
+}
+
+async function handleDomainOverview(env, url) {
+  const rawTarget = url.searchParams.get("target") || "";
+  const country = (url.searchParams.get("country") || "us").toLowerCase();
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10), 100);
+
+  const target = cleanDomain(rawTarget);
+  if (!target || !/^[a-z0-9][a-z0-9\-\.]+\.[a-z]{2,}$/i.test(target)) {
+    return jsonError("target domain is required", 400);
+  }
+
+  const locationCode = country === "us" ? 2840 : (country === "uk" ? 2826 : 2840);
+
+  const [rankResult, kwResult, blResult] = await Promise.allSettled([
+    dfsPost(env, "/dataforseo_labs/google/domain_rank_overview/live", [
+      { target, location_code: locationCode, language_code: "en" },
+    ]),
+    dfsPost(env, "/dataforseo_labs/google/ranked_keywords/live", [
+      {
+        target,
+        location_code: locationCode,
+        language_code: "en",
+        limit,
+        filters: [["ranked_serp_element.serp_item.rank_group", "<=", 100]],
+      },
+    ]),
+    dfsPost(env, "/backlinks/summary/live", [
+      { target, include_subdomains: true, exclude_internal_backlinks: true },
+    ]),
+  ]);
+
+  // --- domain_rank_overview ---
+  let overview = { organic_traffic: 0, organic_keywords: 0, top1: 0, top3: 0, top10: 0, top100: 0 };
+  if (rankResult.status === "fulfilled") {
+    for (const r of rankResult.value || []) {
+      const metrics = r.metrics?.organic || {};
+      overview.organic_traffic = metrics.etv || metrics.estimated_traffic || 0;
+      overview.organic_keywords = metrics.count || 0;
+      const pos = metrics.positions || {};
+      overview.top1 = pos.pos_1 || 0;
+      overview.top3 = pos.pos_2_3 || 0;
+      overview.top10 = pos.pos_4_10 || 0;
+      overview.top100 = (pos.pos_11_20 || 0) + (pos.pos_21_50 || 0) + (pos.pos_51_100 || 0);
+      if (r.domain_rank != null) overview.domain_rank = r.domain_rank;
+    }
+  }
+
+  // --- ranked_keywords ---
+  const topKeywords = [];
+  if (kwResult.status === "fulfilled") {
+    const seen = new Set();
+    for (const r of kwResult.value || []) {
+      for (const item of r.items || []) {
+        const norm = normalizeDfsItem(item);
+        const serp = item.ranked_serp_element?.serp_item || {};
+        const key = norm.keyword;
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        topKeywords.push({
+          keyword: norm.keyword,
+          search_volume: norm.search_volume,
+          cpc: norm.cpc,
+          keyword_difficulty: norm.keyword_difficulty,
+          search_intent: norm.search_intent,
+          position: serp.rank_group || serp.rank_absolute || null,
+          url: serp.url || "",
+          etv: serp.etv || item.etv || 0,
+        });
+      }
+    }
+  }
+
+  // --- backlinks summary ---
+  let backlinks = { referring_domains: 0, backlinks: 0, referring_ips: 0, referring_subnets: 0 };
+  if (blResult.status === "fulfilled") {
+    for (const r of blResult.value || []) {
+      const summary = r.summary || {};
+      backlinks.referring_domains = summary.referring_domains || 0;
+      backlinks.backlinks = summary.backlinks || 0;
+      backlinks.referring_ips = summary.referring_ips || 0;
+      backlinks.referring_subnets = summary.referring_subnets || 0;
+    }
+  }
+
+  // Derive top pages from ranked keywords
+  const pageMap = {};
+  for (const kw of topKeywords) {
+    if (!kw.url) continue;
+    const p = pageMap[kw.url] ||= { url: kw.url, etv: 0, keywords: 0, top_keyword: kw.keyword, top_volume: kw.search_volume };
+    p.etv += kw.etv || 0;
+    p.keywords++;
+    if ((kw.search_volume || 0) > p.top_volume) {
+      p.top_keyword = kw.keyword;
+      p.top_volume = kw.search_volume;
+    }
+  }
+  const topPages = Object.values(pageMap)
+    .sort((a, b) => b.etv - a.etv)
+    .slice(0, limit);
+
+  return {
+    target,
+    country,
+    overview,
+    backlinks,
+    top_keywords: topKeywords.slice(0, limit),
+    top_pages: topPages,
+  };
+}
+
 function cacheKey(request, route) {
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
@@ -2212,6 +2332,7 @@ export default {
         else if (route === "keywords/discover") result = await handleKeywordDiscover(env, url);
         else if (route === "keywords/site") result = await handleKeywordSite(env, url);
         else if (route === "keywords/overview") result = await handleKeywordOverview(env, url);
+        else if (route === "domain/overview") result = await handleDomainOverview(env, url);
         else return jsonError("Not found", 404);
 
         ctx.waitUntil(cacheSet(env, key, result, CACHE_TTL[route]));

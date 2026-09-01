@@ -76,6 +76,9 @@
     {
       id: 'competitors', label: 'Competitors', icon: ICONS.competitors,
       groups: [
+        { label: 'Research', sections: [
+          { id: 'domain-overview', label: 'Domain Overview', panel: 'domain-overview' }
+        ]},
         { label: 'Track', sections: [
           { id: 'competitor-vc', label: 'Vantage Circle', panel: 'competitor', tab: 'vantagecircle' },
           { id: 'competitor-vfit', label: 'Vantage Fit', panel: 'competitor', tab: 'vantagefit' }
@@ -283,6 +286,18 @@
     const list = getRecentKeywordSearches().filter(function (x) { return x.toLowerCase() !== q.toLowerCase(); });
     list.unshift(q);
     try { localStorage.setItem(RECENT_KEYWORDS_KEY, JSON.stringify(list.slice(0, 8))); } catch (e) {}
+  }
+
+  // Recent domain searches (localStorage)
+  const RECENT_DOMAINS_KEY = 'orbit_recent_domain_searches';
+  function getRecentDomainSearches() {
+    try { return JSON.parse(localStorage.getItem(RECENT_DOMAINS_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function addRecentDomainSearch(q) {
+    if (!q) return;
+    const list = getRecentDomainSearches().filter(function (x) { return x.toLowerCase() !== q.toLowerCase(); });
+    list.unshift(q);
+    try { localStorage.setItem(RECENT_DOMAINS_KEY, JSON.stringify(list.slice(0, 8))); } catch (e) {}
   }
 
   // ---------------------------------------------------------------- summary
@@ -4110,6 +4125,221 @@
     applyFilter();
   }
 
+  // ---------------------------------------------------------------- domain overview
+  function cleanDomainInput(raw) {
+    return String(raw || '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/.*$/, '').toLowerCase().trim();
+  }
+
+  async function loadDomainOverview() {
+    const el = document.getElementById('panel-domain-overview');
+    if (!el) return;
+
+    const recentSearches = getRecentDomainSearches();
+    const recentHtml = recentSearches.length
+      ? '<div class="kw-recent"><div class="kw-recent-label">Recent domains</div><div class="kw-recent-chips">' +
+        recentSearches.map(function (d) { return '<button class="kw-recent-chip do-recent-chip" data-recent="' + esc(d) + '">' + esc(d) + '</button>'; }).join('') +
+        '</div></div>'
+      : '';
+
+    const headerHtml = '<div class="kw-open-header do-header">' +
+      '<div class="kw-open-searchbar">' +
+      '<input class="kw-open-search do-domain-input" type="search" placeholder="Enter a competitor domain (e.g. semrush.com)">' +
+      '<select class="kw-open-country do-country"><option value="us">United States</option><option value="uk">United Kingdom</option><option value="ca">Canada</option><option value="au">Australia</option><option value="in">India</option></select>' +
+      '<select class="kw-open-limit do-limit"><option value="25">25 results</option><option value="50" selected>50 results</option><option value="100">100 results</option></select>' +
+      '<button class="kw-open-btn do-analyze" type="button">Analyze</button></div>' +
+      recentHtml + '</div>';
+
+    const emptyState = '<div class="card do-empty" style="margin-top:16px"><p class="sub">Enter a domain above to see estimated traffic, ranking keywords, top pages, and backlink summary.</p></div>';
+
+    const resultsHtml = '<div class="do-results" style="display:none">' +
+      '<div class="kpis do-kpis"></div>' +
+      '<div class="do-handoffs no-print">' +
+      '<button class="do-research-kw" type="button">Research keywords for this domain</button>' +
+      '<button class="do-view-backlinks" type="button">View backlink summary</button>' +
+      '</div>' +
+      '<div class="kw-open-layout" style="margin-top:18px">' +
+      '<div class="kw-open-main">' +
+      '<div class="kw-results-head"><div class="kw-results-title">Top Keywords</div><div class="kw-results-meta"><span class="sub do-kw-count">0</span></div></div>' +
+      '<div class="table-tools no-print"><input class="do-kw-filter" type="search" placeholder="Filter keywords…"><button class="do-kw-export" type="button">Export CSV</button></div>' +
+      '<table class="kw-table do-kw-table"><thead><tr>' +
+      '<th class="sortable" data-sort="keyword">Keyword <span class="arrow"></span></th>' +
+      '<th class="sortable" data-sort="volume">Volume <span class="arrow"></span></th>' +
+      '<th class="sortable" data-sort="cpc">CPC <span class="arrow"></span></th>' +
+      '<th>KD</th>' +
+      '<th>Intent</th>' +
+      '<th class="sortable" data-sort="position">Pos <span class="arrow"></span></th>' +
+      '<th>URL</th>' +
+      '</tr></thead><tbody></tbody></table>' +
+      '</div>' +
+      '<div class="kw-open-sidebar">' +
+      '<div class="kw-open-card"><h4>Top Pages</h4><div class="do-pages-list sub">No pages yet.</div></div>' +
+      '<div class="kw-open-card"><h4>Position Distribution</h4><div class="do-position-chart"></div></div>' +
+      '</div></div></div>';
+
+    el.innerHTML = panelHead('Domain Overview', 'Analyze any competitor domain: traffic, ranking keywords, top pages, and backlinks.') + headerHtml + emptyState + resultsHtml;
+    initDomainOverviewInteractions();
+  }
+
+  function renderDomainOverview(data) {
+    const el = document.getElementById('panel-domain-overview');
+    const results = el.querySelector('.do-results');
+    results.style.display = '';
+
+    const ov = data.overview || {};
+    const bl = data.backlinks || {};
+    const top1 = ov.top1 || 0, top3 = ov.top3 || 0, top10 = ov.top10 || 0, top100 = ov.top100 || 0;
+
+    el.querySelector('.do-kpis').innerHTML = [
+      '<div class="kpi"><div class="num">' + esc(fmtNum(ov.organic_traffic || 0)) + '</div><div class="label">Est. organic traffic/mo</div></div>',
+      '<div class="kpi"><div class="num">' + esc(fmtNum(ov.organic_keywords || 0)) + '</div><div class="label">Organic keywords</div></div>',
+      '<div class="kpi"><div class="num">' + esc(fmtNum(bl.referring_domains || 0)) + '</div><div class="label">Referring domains</div></div>',
+      '<div class="kpi"><div class="num">' + esc(fmtNum(bl.backlinks || 0)) + '</div><div class="label">Backlinks</div></div>',
+      '<div class="kpi"><div class="num">' + esc(fmtNum(top10)) + '</div><div class="label">Top 10 keywords</div></div>',
+    ].join('');
+
+    // Position distribution chart (simple horizontal bars)
+    const maxPos = Math.max(top1, top3, top10, top100, 1);
+    el.querySelector('.do-position-chart').innerHTML = [
+      ['Top 1', top1],
+      ['Top 3', top3],
+      ['Top 10', top10],
+      ['Top 100', top100],
+    ].map(function (p) {
+      return '<div class="do-bar"><span class="do-bar-label">' + esc(p[0]) + '</span>' +
+        '<div class="do-bar-track"><div class="do-bar-fill" style="width:' + ((p[1] / maxPos) * 100).toFixed(1) + '%"></div></div>' +
+        '<span class="do-bar-num">' + esc(fmtNum(p[1])) + '</span></div>';
+    }).join('');
+
+    // Top keywords table
+    const kws = data.top_keywords || [];
+    const kwRows = kws.map(function (r) {
+      return '<tr data-keyword="' + esc(r.keyword) + '" data-volume="' + (r.search_volume || 0) + '" data-cpc="' + (r.cpc || 0) + '" data-position="' + (r.position || 0) + '">' +
+        '<td><b>' + esc(r.keyword) + '</b></td>' +
+        '<td class="num">' + esc(fmtNum(r.search_volume || 0)) + '</td>' +
+        '<td class="num">' + (r.cpc ? '$' + r.cpc.toFixed(2) : '—') + '</td>' +
+        '<td>' + scoreBadge(r.keyword_difficulty) + '</td>' +
+        '<td>' + intentBadge(r.search_intent) + '</td>' +
+        '<td class="num">' + (r.position || '—') + '</td>' +
+        '<td class="do-table-url">' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank">' + esc(r.url) + '</a>' : '—') + '</td>' +
+        '</tr>';
+    }).join('');
+    const kwTbody = el.querySelector('.do-kw-table tbody');
+    kwTbody.innerHTML = kwRows || '<tr><td colspan="7" class="sub">No ranking keywords found.</td></tr>';
+    el.querySelector('.do-kw-count').textContent = fmtNum(kws.length) + ' keywords';
+
+    // Top pages sidebar
+    const pages = data.top_pages || [];
+    el.querySelector('.do-pages-list').innerHTML = pages.length
+      ? '<div class="do-pages">' + pages.map(function (p) {
+          return '<div class="do-page">' +
+            '<a class="do-page-url" href="' + esc(p.url) + '" target="_blank">' + esc(p.url) + '</a>' +
+            '<div class="do-page-meta">' + esc(fmtNum(p.etv || 0)) + ' est. visits · ' + fmtNum(p.keywords) + ' keywords · top: ' + esc(p.top_keyword || '—') + '</div></div>';
+        }).join('') + '</div>'
+      : '<p class="sub">No top pages found.</p>';
+
+    // Store data on element for handoffs
+    el.setAttribute('data-domain-target', data.target || '');
+    el.setAttribute('data-domain-country', data.country || 'us');
+  }
+
+  function initDomainOverviewInteractions() {
+    const wrap = document.getElementById('panel-domain-overview');
+    if (!wrap) return;
+
+    const input = wrap.querySelector('.do-domain-input');
+    const countrySel = wrap.querySelector('.do-country');
+    const limitSel = wrap.querySelector('.do-limit');
+    const analyzeBtn = wrap.querySelector('.do-analyze');
+    const results = wrap.querySelector('.do-results');
+    const empty = wrap.querySelector('.do-empty');
+
+    async function analyze() {
+      const raw = input.value;
+      const target = cleanDomainInput(raw);
+      if (!target) { toast('Enter a domain first'); return; }
+      input.value = target;
+      const country = countrySel.value || 'us';
+      const limit = limitSel.value || '50';
+
+      analyzeBtn.disabled = true;
+      analyzeBtn.textContent = 'Analyzing…';
+      try {
+        const data = await api('domain/overview?target=' + encodeURIComponent(target) + '&country=' + esc(country) + '&limit=' + esc(limit));
+        empty.style.display = 'none';
+        renderDomainOverview(data);
+        addRecentDomainSearch(target);
+      } catch (e) {
+        toast('Failed: ' + errMsg(e), { type: 'error' });
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = 'Analyze';
+      }
+    }
+
+    if (analyzeBtn) analyzeBtn.addEventListener('click', analyze);
+    if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') analyze(); });
+
+    wrap.querySelectorAll('.do-recent-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        input.value = chip.getAttribute('data-recent');
+        analyze();
+      });
+    });
+
+    // Handoff: research keywords for this domain
+    wrap.querySelector('.do-research-kw').addEventListener('click', function () {
+      const target = wrap.getAttribute('data-domain-target');
+      if (!target) return;
+      activateSection('keywords');
+      const kwWrap = document.getElementById('panel-keywords');
+      const seedInput = kwWrap.querySelector('.kw-open-search');
+      const countrySel = kwWrap.querySelector('.kw-open-country');
+      const siteTab = kwWrap.querySelector('.kw-tab[data-tab="site"]');
+      if (seedInput) seedInput.value = target;
+      if (countrySel) countrySel.value = wrap.getAttribute('data-domain-country') || 'us';
+      if (siteTab) siteTab.click();
+      const discoverBtn = kwWrap.querySelector('.kw-open-btn');
+      if (discoverBtn) discoverBtn.click();
+    });
+
+    // Handoff: scroll to backlinks panel
+    wrap.querySelector('.do-view-backlinks').addEventListener('click', function () {
+      activateSection('backlinks');
+    });
+
+    // Filter top keywords
+    const kwFilter = wrap.querySelector('.do-kw-filter');
+    if (kwFilter) {
+      kwFilter.addEventListener('input', function () {
+        const q = kwFilter.value.toLowerCase();
+        const rows = wrap.querySelectorAll('.do-kw-table tbody tr');
+        let n = 0;
+        rows.forEach(function (r) {
+          const ok = !q || r.textContent.toLowerCase().indexOf(q) !== -1;
+          r.style.display = ok ? '' : 'none';
+          if (ok) n++;
+        });
+        wrap.querySelector('.do-kw-count').textContent = fmtNum(n) + ' keywords';
+      });
+    }
+
+    // Export top keywords CSV
+    wrap.querySelector('.do-kw-export').addEventListener('click', function () {
+      const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+      const rows = Array.prototype.slice.call(wrap.querySelectorAll('.do-kw-table tbody tr')).filter(function (r) { return r.style.display !== 'none'; });
+      const csv = ['keyword,search_volume,cpc,keyword_difficulty,intent,position,url'].concat(rows.map(function (r) {
+        const cells = r.cells;
+        const urlA = cells[6].querySelector('a');
+        return [q(cells[0].textContent), r.getAttribute('data-volume'), r.getAttribute('data-cpc'), q(cells[3].textContent), q(cells[4].textContent), r.getAttribute('data-position'), q(urlA ? urlA.getAttribute('href') : '')].join(',');
+      })).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = 'domain-keywords-' + (wrap.getAttribute('data-domain-target') || 'domain') + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  }
+
   // ---------------------------------------------------------------- boot
   document.addEventListener('DOMContentLoaded', function () {
     initNavigation();
@@ -4132,6 +4362,7 @@
       loadLlmPrompts(),
       loadGscLlmQueries(),
       loadCompetitor(),
+      loadDomainOverview(),
     ]).catch(function (e) {
       console.error('Dashboard load error:', e);
     }).finally(function () {
