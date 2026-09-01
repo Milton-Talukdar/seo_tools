@@ -3553,16 +3553,6 @@
         return '<option value="' + esc(s) + '">' + esc(s) + '</option>';
       }).join('');
 
-      const byStatus = {};
-      rows.forEach(function (r) { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
-
-      const kpiHtml = '<div class="kpis">' +
-        '<div class="kpi"><div class="num">' + fmtNum(rows.length) + '</div><div class="label">In research list (not rank-tracked)</div></div>' +
-        '<div class="kpi"><div class="num">' + fmtNum(byStatus.targeting || 0) + '</div><div class="label">Targeting</div></div>' +
-        '<div class="kpi"><div class="num">' + fmtNum(byStatus.ranking || 0) + '</div><div class="label">Ranking</div></div>' +
-        '<div class="kpi"><div class="num">' + fmtNum(gaps.length) + '</div><div class="label">Gaps from rank data</div></div>' +
-        '</div>';
-
       const tableRows = rows.map(function (r) {
         const search = [r.keyword, r.cluster, r.search_intent, r.source, r.status].filter(Boolean).join(' ').toLowerCase();
         return '<tr data-search="' + esc(search) + '" data-property="' + esc(r.property) + '" data-cluster="' + esc(r.cluster || '') + '" data-status="' + esc(r.status) + '" data-volume="' + (r.search_volume || 0) + '" data-difficulty="' + (r.keyword_difficulty || 0) + '">' +
@@ -3691,7 +3681,7 @@
         '<button class="kw-tab" data-tab="site">Site keywords</button>' +
         '</div>';
 
-      el.innerHTML = panelHead('Keyword Research', 'Research list, keyword gaps, and DataForSEO discovery.') + kpiHtml + openHeader + tabsHtml + trackedHtml + discoveryHtml;
+      el.innerHTML = panelHead('Keyword Research', 'Research list, keyword gaps, and DataForSEO discovery.') + openHeader + tabsHtml + trackedHtml + discoveryHtml;
       initKeywordsInteractions();
     } catch (e) {
       el.innerHTML = errorCard(e.message);
