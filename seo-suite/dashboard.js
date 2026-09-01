@@ -260,6 +260,19 @@
     return dayText ? '<div class="panel-stamp">Data as of ' + esc(fmtDate(dayText)) + '</div>' : '';
   }
 
+  // OpenSEO-inspired panel header: title + subtitle + optional search input
+  function panelHead(title, subtitle, searchOpts) {
+    searchOpts = searchOpts || {};
+    const searchHtml = searchOpts.id
+      ? '<div class="panel-head-search"><label class="visually-hidden" for="' + esc(searchOpts.id) + '">' + esc(searchOpts.placeholder || 'Search') + '</label>' +
+        '<input id="' + esc(searchOpts.id) + '" type="search" placeholder="' + esc(searchOpts.placeholder || 'Search…') + '"></div>'
+      : '';
+    return '<div class="panel-head">' +
+      '<div class="panel-head-row">' +
+      '<div><h2>' + esc(title) + '</h2>' + (subtitle ? '<div class="sub">' + esc(subtitle) + '</div>' : '') + '</div>' +
+      searchHtml + '</div></div>';
+  }
+
   // ---------------------------------------------------------------- summary
   const ACTION_TYPE_META = {
     rank_drop: { icon: '▼', cls: 'action-rank_drop', sev: 'Rank drop' },
@@ -408,7 +421,7 @@
           }).join('') + '</div>'
         : '<div class="card">No summary data available yet.</div>';
 
-      el.innerHTML = '<h2>Executive summary</h2>' +
+      el.innerHTML = panelHead('Executive Summary', 'Key metrics, actions, and annotations across properties.') +
         renderActionDigest(actionsData.actions, actionsData.generated_at) +
         kpiHtml +
         renderAnnotations(annotationsData.annotations) +
@@ -591,7 +604,7 @@
       }).join('');
 
       const rankDay = [circle.latest_day, fit.latest_day].filter(Boolean).sort().pop();
-      el.innerHTML = '<h2>Rank Tracker · Google US top 100</h2>' + tabHtml + panelsHtml + stampHtml(rankDay);
+      el.innerHTML = panelHead('Rank Tracker', 'Google US top 100 positions for tracked keywords.') + tabHtml + panelsHtml + stampHtml(rankDay);
       initPropTabs(el, 'rank-prop');
       initRankInteractions();
     } catch (e) {
@@ -726,7 +739,7 @@
         return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-bl="' + t.id + '">' + t.label + '</button>';
       }).join('') + '</div>';
 
-      el.innerHTML = '<h2>Backlinks</h2>' + tabHtml +
+      el.innerHTML = panelHead('Backlinks', 'Backlink profile, top links, referring domains, and broken pages.') + tabHtml +
         renderBacklinkTab('Overview', 'overview', overviewHtml) +
         renderBacklinkTab('Top Backlinks', 'top', topHtml) +
         renderBacklinkTab('Referring Domains', 'domains', domainsHtml) +
@@ -828,7 +841,7 @@
 
       const anyData = tabs.some(function (t) { return t.data && t.data.run; });
       if (!anyData) {
-        el.innerHTML = '<h2>Site Health</h2><div class="card">No site health data available yet — the audit runs monthly.</div>';
+        el.innerHTML = panelHead('Site Health', 'Technical audit findings from Lighthouse and crawl checks.') + '<div class="card">No site health data available yet — the audit runs monthly.</div>';
         return;
       }
 
@@ -842,7 +855,7 @@
       }).join('');
 
       const latestDay = tabs.map(function (t) { return t.data.day; }).filter(Boolean).sort().pop();
-      el.innerHTML = '<h2>Site Health</h2>' + tabHtml + panelsHtml + stampHtml(latestDay);
+      el.innerHTML = panelHead('Site Health', 'Technical audit findings from Lighthouse and crawl checks.') + tabHtml + panelsHtml + stampHtml(latestDay);
       initPropTabs(el, 'sitehealth-prop');
 
       // wire up filters for each property panel
@@ -3612,7 +3625,7 @@
         '<button class="kw-discover-btn" type="button">Discover</button>' +
         '<span class="kw-discover-status sub"></span></div>';
 
-      el.innerHTML = '<h2>Keyword Research</h2>' + kpiHtml + seedBar + tabsHtml + trackedHtml + discoveryHtml;
+      el.innerHTML = panelHead('Keyword Research', 'Research list, keyword gaps, and DataForSEO discovery.') + kpiHtml + seedBar + tabsHtml + trackedHtml + discoveryHtml;
       initKeywordsInteractions();
     } catch (e) {
       el.innerHTML = errorCard(e.message);
