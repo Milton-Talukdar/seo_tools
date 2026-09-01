@@ -620,6 +620,89 @@ SCRIPT = """
     applySort();
     applyFilter();
   })();
+
+  // ---- site audit: search + severity + issue-type filters + sorting ----
+  (function () {
+    var wrap = document.querySelector('.site-audit-wrap');
+    if (!wrap) return;
+    var search = wrap.querySelector('.site-audit-search');
+    var propSel = wrap.querySelector('.site-audit-property');
+    var sevSel = wrap.querySelector('.site-audit-severity');
+    var typeSel = wrap.querySelector('.site-audit-type');
+    var tbody = wrap.querySelector('tbody');
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    var count = wrap.querySelector('.site-audit-count');
+    var ths = wrap.querySelectorAll('th.sortable');
+    var sortKey = 'severity_rank', sortDir = -1;
+
+    function applyFilter() {
+      var q = search ? search.value.toLowerCase() : '';
+      var prop = propSel ? propSel.value : '';
+      var sev = sevSel ? sevSel.value : '';
+      var itype = typeSel ? typeSel.value : '';
+      var n = 0;
+      rows.forEach(function (r) {
+        var ok = true;
+        if (q && r.getAttribute('data-search').indexOf(q) === -1) ok = false;
+        if (ok && prop && r.getAttribute('data-property') !== prop) ok = false;
+        if (ok && sev && r.getAttribute('data-severity') !== sev) ok = false;
+        if (ok && itype && r.getAttribute('data-issue') !== itype) ok = false;
+        r.style.display = ok ? '' : 'none';
+        if (ok) n++;
+      });
+      if (count) count.textContent = n + ' of ' + rows.length + ' issues';
+    }
+
+    function keyVal(r, k) {
+      var v = r.getAttribute('data-' + k);
+      if (k === 'display' || k === 'issue' || k === 'property') return (v || '').toLowerCase();
+      if (k === 'severity_rank') {
+        var s = r.getAttribute('data-severity');
+        return s === 'critical' ? 3 : (s === 'warning' ? 2 : 1);
+      }
+      return v === '' || v == null ? null : parseFloat(v);
+    }
+
+    function cmp(a, b) {
+      var va = keyVal(a, sortKey), vb = keyVal(b, sortKey);
+      if (sortKey !== 'display' && sortKey !== 'issue' && sortKey !== 'property') {
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;
+        if (vb === null) return -1;
+      }
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    }
+
+    function applySort() {
+      rows.sort(cmp);
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      ths.forEach(function (th) {
+        var arr = th.querySelector('.arrow');
+        if (arr) arr.textContent =
+          th.getAttribute('data-sort') === sortKey ? (sortDir === 1 ? '▲' : '▼') : '';
+      });
+    }
+
+    ths.forEach(function (th) {
+      th.addEventListener('click', function () {
+        var k = th.getAttribute('data-sort');
+        if (k === sortKey) { sortDir = -sortDir; }
+        else {
+          sortKey = k;
+          sortDir = (k === 'display' || k === 'issue' || k === 'property') ? 1 : -1;
+        }
+        applySort();
+      });
+    });
+
+    [search, propSel, sevSel, typeSel].forEach(function (el) {
+      if (el) el.addEventListener('input', applyFilter);
+    });
+    applySort();
+    applyFilter();
+  })();
 })();
 """
 
@@ -1516,6 +1599,130 @@ def freshness_section(con):
     return f"<h2>Content Freshness</h2>{kpi_html}{candidates_html}{table_html}"
 
 
+
+def site_audit_section(con):
+    """Site Health panel: KPIs + issue breakdown + sortable issue table."""
+    latest = con.execute("SELECT MAX(day) FROM site_audit_runs").fetchone()[0]
+    if not latest:
+        return ""
+
+    runs = con.execute(
+        """SELECT day, property, pages_crawled, pages_failed, issues_found, psi_calls
+           FROM site_audit_runs WHERE day=? ORDER BY property""",
+        (latest,),
+    ).fetchall()
+    if not runs:
+        return ""
+
+    issues = con.execute(
+        """SELECT url, property, issue_type, severity, details
+           FROM site_audit_issues WHERE day=? ORDER BY severity DESC, issue_type""",
+        (latest,),
+    ).fetchall()
+
+    pages = con.execute(
+        """SELECT url, property, status_code, performance_score, seo_score
+           FROM site_audit_pages WHERE day=?""",
+        (latest,),
+    ).fetchall()
+
+    total_crawled = sum(r[2] for r in runs)
+    total_failed = sum(r[3] for r in runs)
+    total_issues = sum(r[4] for r in runs)
+    critical = sum(1 for i in issues if i[3] == "critical")
+    warning = sum(1 for i in issues if i[3] == "warning")
+
+    avg_perf = None
+    perf_scores = [p[3] for p in pages if p[3] is not None]
+    if perf_scores:
+        avg_perf = int(sum(perf_scores) / len(perf_scores))
+
+    issue_type_counts = {}
+    for _, _, itype, _, _ in issues:
+        issue_type_counts[itype] = issue_type_counts.get(itype, 0) + 1
+
+    def sev_chip(severity):
+        cls = {"critical": "none", "warning": "cite", "info": ""}.get(severity, "")
+        return f"<span class='chip {cls}'>{esc(severity)}</span>"
+
+    def type_chip(itype):
+        return f"<span class='chip'>{esc(itype.replace('_', ' '))}</span>"
+
+    # KPI cards
+    cards = [
+        ("Pages crawled", f"{total_crawled}", f"{len(runs)} properties"),
+        ("Failed fetches", f"{total_failed}", f"{round(total_failed/max(1,total_crawled)*100,1)}% of pages"),
+        ("Issues found", f"{total_issues}", f"{critical} critical · {warning} warnings"),
+    ]
+    if avg_perf is not None:
+        cards.append(("Avg PSI performance", f"{avg_perf}", "Lighthouse score"))
+
+    kpi_html = "<div class='kpis'>" + "".join(
+        f"<div class='kpi'><div class='num'>{esc(num)}</div><div class='label'>{esc(label)}"
+        f"<br><span class='sub'>{esc(sub)}</span></div></div>"
+        for label, num, sub in cards
+    ) + "</div>"
+
+    # Issue breakdown by type
+    breakdown_html = ""
+    if issue_type_counts:
+        breakdown_rows = sorted(issue_type_counts.items(), key=lambda x: -x[1])
+        breakdown_html = (
+            "<div class='card'><b>Issue breakdown</b>"
+            "<table><thead><tr><th>Issue type</th><th>Count</th></tr></thead><tbody>"
+            + "".join(
+                f"<tr><td>{type_chip(itype)}</td><td class='num'>{cnt}</td></tr>"
+                for itype, cnt in breakdown_rows
+            )
+            + "</tbody></table></div>"
+        )
+
+    # Full issue table
+    table_rows = []
+    for url, prop, itype, severity, details in issues:
+        display = url.replace("https://", "").replace("http://", "")
+        if len(display) > 70:
+            display = display[:67] + "…"
+        search = " ".join(str(x).lower() for x in (url, prop, itype, severity, details) if x)
+        sev_rank = "3" if severity == "critical" else ("2" if severity == "warning" else "1")
+        table_rows.append(
+            f"<tr data-search='{esc(search)}' data-property='{esc(prop)}' data-severity='{esc(severity)}'"
+            f" data-issue='{esc(itype)}' data-severity_rank='{sev_rank}'>"
+            f"<td><a href='{esc(url)}' target='_blank'>{esc(display)}</a></td>"
+            f"<td>{esc(prop)}</td>"
+            f"<td>{type_chip(itype)}</td>"
+            f"<td>{sev_chip(severity)}</td>"
+            f"<td class='sub'>{esc(details)}</td>"
+            f"</tr>"
+        )
+
+    properties = sorted({i[1] for i in issues})
+    severities = sorted({i[3] for i in issues}, key=lambda s: {"critical": 0, "warning": 1, "info": 2}.get(s, 3))
+    issue_types = sorted({i[2] for i in issues})
+
+    prop_opts = "<option value=''>All properties</option>" + "".join(f"<option value='{esc(p)}'>{esc(p)}</option>" for p in properties)
+    sev_opts = "<option value=''>All severities</option>" + "".join(f"<option value='{esc(s)}'>{esc(s)}</option>" for s in severities)
+    type_opts = "<option value=''>All issue types</option>" + "".join(f"<option value='{esc(t)}'>{esc(t.replace('_', ' '))}</option>" for t in issue_types)
+
+    table_html = (
+        f"<div class='card site-audit-wrap'>"
+        f"<div class='table-tools no-print site-audit-tools'>"
+        f"<input class='site-audit-search' type='search' placeholder='Search issues…'>"
+        f"<select class='site-audit-property'>{prop_opts}</select>"
+        f"<select class='site-audit-severity'>{sev_opts}</select>"
+        f"<select class='site-audit-type'>{type_opts}</select>"
+        f"<span class='site-audit-count sub'>{len(issues)} issues</span></div>"
+        f"<table class='site-audit-table'><thead><tr>"
+        f"<th class='sortable' data-sort='display'>Page <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='property'>Property <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='issue'>Issue <span class='arrow'></span></th>"
+        f"<th class='sortable' data-sort='severity_rank'>Severity <span class='arrow'></span></th>"
+        f"<th>Details</th>"
+        f"</tr></thead><tbody>{''.join(table_rows)}</tbody></table></div>")
+
+    return f"<h2>Site Health</h2>{kpi_html}{breakdown_html}{table_html}"
+
+
 # ---------------------------------------------------------------- page assembly
 def build_panels(con):
     """[(panel_id, label, html, [(sub_id, sub_label), ...], group), ...] — only
@@ -1540,6 +1747,9 @@ def build_panels(con):
     fr = freshness_section(con)
     if fr:
         panels.append(("freshness", "Content Freshness", fr, [], None))
+    sa = site_audit_section(con)
+    if sa:
+        panels.append(("site-audit", "Site Health", sa, [], None))
     rs = research_section(con)
     if rs:
         panels.append(("research", "Keyword Research", rs, [], None))

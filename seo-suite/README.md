@@ -17,6 +17,7 @@ into this DB).
 - `llm_discover.py` — monthly job: AI search volumes + real user questions (self-throttled to once per 25 days per property, `--force` to override)
 - `enrich.py` — monthly job: refreshes volume + KD + intent in keyword_meta (self-throttled to once per 25 days, `--force` to override)
 - `freshness.py` — monthly job: crawl configured sitemaps, score pages on age/depth/rank, and flag decay risk + recommended action
+- `site_audit.py` — monthly job: technical site health crawler (4xx/5xx, redirects, missing titles/meta/H1, canonical issues, internal link rot) plus optional PageSpeed Insights CWV/Lighthouse scores
 - `freshness_sitemaps.csv` — sitemap config: `property,page_type,sitemap_url`
 - `import_ahrefs.py` — importer: Ahrefs overview export (positions + tags + volume/KD/intent + traffic), rank CSV, lost-refdomains CSV, and old llm_visibility.db history
 - `dashboard.py` — builds a single `index.html` with a section per module
@@ -49,6 +50,10 @@ python3 freshness.py --dry-run       # preview which pages would be crawled
 python3 freshness.py --limit 20      # smoke test: 20 URLs per sitemap
 python3 freshness.py --force         # full monthly freshness/decay run
 python3 freshness.py --page-type blog # crawl only blog sitemaps
+python3 site_audit.py --dry-run       # preview what would run; zero cost
+python3 site_audit.py --limit 5       # cheap smoke test (5 URLs only)
+python3 site_audit.py --force         # full technical audit now
+python3 site_audit.py                 # monthly full run (self-throttled)
 python3 dashboard.py --open          # build index.html and open it in your browser
 
 # Ahrefs history imports (read-only on all sources):
@@ -61,10 +66,11 @@ python3 import_ahrefs.py llm-history   # carries over old llm_visibility.db
 
 ## Schedule
 
-The GitHub Action (`.github/workflows/seo-suite.yml`) fires every Monday 06:53 UTC:
+The GitHub Action (`.github/workflows/weekly-sync.yml`) fires every Sunday 06:00 UTC:
 rank tracking + backlinks weekly, LLM visibility on even ISO weeks (biweekly is
-enough — LLM answers drift slowly), LLM discovery monthly (self-throttled), and
-content freshness / decay on the 1st of every month (or `--force`).
+enough — LLM answers drift slowly), LLM discovery monthly (self-throttled),
+content freshness / decay on the 1st of every month (or `--force`), and
+site audits on the 1st of every month (or `--force`).
 Manual runs (Actions tab → Run workflow) always execute everything.
 
 ## Deploying the dashboard
@@ -94,6 +100,7 @@ npx wrangler pages deploy . --project-name=orbit-v4o
 - LLM visibility + discovery: ≈ **$52/yr** (two projects × the original single-project cost)
 - Keyword enrichment (volume/KD/intent): ≈ $0.85/month ≈ **$10/yr**
 - Content freshness / decay: **free** (sitemap/page crawl only; optional GSC traffic data is also free)
+- Site audits: **free** for the crawler; PageSpeed Insights is free up to 25,000 queries/day with a Google API key
 
 Total run rate ≈ $94/yr on the existing DataForSEO subscription.
 
@@ -103,6 +110,14 @@ Total run rate ≈ $94/yr on the existing DataForSEO subscription.
 in CI, create a Google service account, download its JSON key, and paste the
 entire JSON into a GitHub secret named `GSC_SERVICE_ACCOUNT_JSON`. Without this
 secret the module still works using rank-trend data only.
+
+## Optional: PageSpeed Insights / Core Web Vitals
+
+`site_audit.py` can call the free Google PageSpeed Insights API for real CWV
+metrics (LCP, INP, CLS) and Lighthouse scores on your top-ranked pages. Set a
+GitHub secret or env variable named `GOOGLE_API_KEY` with a PageSpeed Insights
+API key. Without it the crawler still runs all on-page checks; only the CWV
+scores are skipped.
 
 ## Customizing
 
@@ -132,4 +147,4 @@ secret the module still works using rank-trend data only.
 
 - Keyword research / content gap on-demand screens (DataForSEO Labs API)
 - GA panels
-- Lighthouse site health module
+- Deeper Lighthouse audits beyond PSI (custom CWV lab data, full trace)

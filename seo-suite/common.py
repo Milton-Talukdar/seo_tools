@@ -227,6 +227,25 @@ def init_db():
     CREATE TABLE IF NOT EXISTS freshness_status(
         url TEXT PRIMARY KEY, status TEXT, owner TEXT, note TEXT,
         updated_at TEXT);
+    CREATE TABLE IF NOT EXISTS site_audit_runs(
+        day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle',
+        pages_crawled INTEGER, pages_failed INTEGER, issues_found INTEGER,
+        psi_calls INTEGER, run_duration_seconds INTEGER,
+        PRIMARY KEY(day, property));
+    CREATE TABLE IF NOT EXISTS site_audit_pages(
+        day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle', url TEXT,
+        status_code INTEGER, final_url TEXT, title TEXT, meta_description TEXT,
+        h1 TEXT, canonical TEXT, canonical_ok INTEGER, word_count INTEGER,
+        internal_links INTEGER, external_links INTEGER, has_viewport INTEGER,
+        redirect_count INTEGER, lcp REAL, inp REAL, cls REAL,
+        performance_score INTEGER, seo_score INTEGER, psi_status TEXT,
+        fetch_error TEXT,
+        PRIMARY KEY(day, property, url));
+    CREATE TABLE IF NOT EXISTS site_audit_issues(
+        day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle', url TEXT,
+        issue_type TEXT, severity TEXT CHECK(severity IN ('critical', 'warning', 'info')),
+        details TEXT,
+        PRIMARY KEY(day, property, url, issue_type));
     """)
     # v2 migration: rank_snapshots gained a `property` column
     cols = [r[1] for r in con.execute("PRAGMA table_info(rank_snapshots)")]

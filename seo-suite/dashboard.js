@@ -40,7 +40,8 @@
       groups: [
         { label: 'Rank', sections: [{ id: 'rank', label: 'Rank Tracker', panel: 'rank', tab: 'vantagecircle' }] },
         { label: 'Research', sections: [{ id: 'keywords', label: 'Keyword Research', panel: 'keywords' }] },
-        { label: 'Links', sections: [{ id: 'backlinks', label: 'Backlinks', panel: 'backlinks' }] }
+        { label: 'Links', sections: [{ id: 'backlinks', label: 'Backlinks', panel: 'backlinks' }] },
+        { label: 'Health', sections: [{ id: 'sitehealth', label: 'Site Health', panel: 'sitehealth' }] }
       ]
     },
     {
@@ -735,6 +736,140 @@
         stampHtml(snaps[0].day);
 
       initBacklinkTabs(el);
+    } catch (e) {
+      el.innerHTML = errorCard(e.message);
+    }
+  }
+
+  // ---------------------------------------------------------------- site health
+  function renderSiteHealthProp(data) {
+    if (!data || !data.run) {
+      return '<div class="card">No site health data for this project yet — the audit runs monthly.</div>';
+    }
+    const run = data.run;
+    const issues = data.issues || [];
+    const pages = data.pages || [];
+
+    const critical = issues.filter(function (i) { return i.severity === 'critical'; }).length;
+    const warning = issues.filter(function (i) { return i.severity === 'warning'; }).length;
+    const info = issues.filter(function (i) { return i.severity === 'info'; }).length;
+
+    const psiScores = pages.map(function (p) { return p.performance_score; }).filter(function (v) { return v != null; });
+    const avgPerf = psiScores.length ? Math.round(psiScores.reduce(function (a, b) { return a + b; }, 0) / psiScores.length) : null;
+
+    const issueTypeCounts = {};
+    issues.forEach(function (i) {
+      issueTypeCounts[i.issue_type] = (issueTypeCounts[i.issue_type] || 0) + 1;
+    });
+
+    function sevCls(s) {
+      return s === 'critical' ? 'none' : (s === 'warning' ? 'cite' : '');
+    }
+
+    const kpiCards = [
+      { num: run.pages_crawled || 0, label: 'Pages crawled' },
+      { num: run.pages_failed || 0, label: 'Failed fetches' },
+      { num: issues.length, label: 'Issues found', sub: critical + ' critical · ' + warning + ' warnings' },
+    ];
+    if (avgPerf != null) {
+      kpiCards.push({ num: avgPerf, label: 'Avg PSI performance', sub: 'Lighthouse score' });
+    }
+
+    const kpiHtml = '<div class="kpis">' + kpiCards.map(function (c) {
+      return '<div class="kpi"><div class="num">' + esc(fmtNum(c.num)) + '</div><div class="label">' + esc(c.label) +
+        (c.sub ? '<br><span class="sub">' + esc(c.sub) + '</span>' : '') + '</div></div>';
+    }).join('') + '</div>';
+
+    const breakdownRows = Object.entries(issueTypeCounts).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) {
+      return '<tr><td><span class="chip">' + esc(e[0].replace(/_/g, ' ')) + '</span></td><td class="num">' + esc(fmtNum(e[1])) + '</td></tr>';
+    }).join('');
+    const breakdownHtml = breakdownRows ?
+      '<div class="card"><b>Issue breakdown</b><table><thead><tr><th>Issue type</th><th>Count</th></tr></thead><tbody>' + breakdownRows + '</tbody></table></div>' : '';
+
+    const issueRows = issues.map(function (i) {
+      var display = i.url.replace(/^https?:\/\//, '');
+      if (display.length > 70) display = display.slice(0, 67) + '…';
+      var search = [i.url, i.issue_type, i.severity, i.details || ''].join(' ').toLowerCase();
+      return '<tr data-search="' + esc(search) + '" data-severity="' + esc(i.severity) + '" data-issue="' + esc(i.issue_type) + '">' +
+        '<td><a href="' + esc(i.url) + '" target="_blank">' + esc(display) + '</a></td>' +
+        '<td><span class="chip">' + esc(i.issue_type.replace(/_/g, ' ')) + '</span></td>' +
+        '<td><span class="chip ' + sevCls(i.severity) + '">' + esc(i.severity) + '</span></td>' +
+        '<td class="sub">' + esc(i.details || '') + '</td></tr>';
+    }).join('');
+
+    const issueTypes = Object.keys(issueTypeCounts).sort();
+    const sevOpts = '<option value="">All severities</option>' +
+      ['critical', 'warning', 'info'].map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>'; }).join('');
+    const typeOpts = '<option value="">All issue types</option>' +
+      issueTypes.map(function (t) { return '<option value="' + esc(t) + '">' + esc(t.replace(/_/g, ' ')) + '</option>'; }).join('');
+
+    const tableHtml = '<div class="card site-health-wrap">' +
+      '<div class="table-tools no-print site-health-tools">' +
+      '<input class="site-health-search" type="search" placeholder="Search issues…">' +
+      '<select class="site-health-severity">' + sevOpts + '</select>' +
+      '<select class="site-health-type">' + typeOpts + '</select>' +
+      '<span class="site-health-count sub">' + issues.length + ' issues</span></div>' +
+      '<table class="site-health-table"><thead><tr>' +
+      '<th>Page</th><th>Issue</th><th>Severity</th><th>Details</th>' +
+      '</tr></thead><tbody>' + (issueRows || '<tr><td colspan="4" class="sub">No issues found.</td></tr>') + '</tbody></table></div>';
+
+    return kpiHtml + breakdownHtml + tableHtml;
+  }
+
+  async function loadSiteHealth() {
+    const el = document.getElementById('panel-sitehealth');
+    try {
+      const data = await api('sitehealth');
+
+      const tabs = [
+        { key: 'vantagecircle', label: 'Vantage Circle', data: data.vantagecircle || {} },
+        { key: 'vantagefit', label: 'Vantage Fit', data: data.vantagefit || {} },
+      ];
+
+      const anyData = tabs.some(function (t) { return t.data && t.data.run; });
+      if (!anyData) {
+        el.innerHTML = '<h2>Site Health</h2><div class="card">No site health data available yet — the audit runs monthly.</div>';
+        return;
+      }
+
+      const tabHtml = '<div class="prop-tabs no-print">' + tabs.map(function (t, i) {
+        return '<button class="prop-tab' + (i === 0 ? ' active' : '') + '" data-prop="' + esc(t.key) + '">' + esc(t.label) + '</button>';
+      }).join('') + '</div>';
+
+      const panelsHtml = tabs.map(function (t, i) {
+        const body = renderSiteHealthProp(t.data);
+        return '<div class="sitehealth-prop' + (i === 0 ? ' active' : '') + '" id="sitehealth-' + esc(t.key) + '">' + body + '</div>';
+      }).join('');
+
+      const latestDay = tabs.map(function (t) { return t.data.day; }).filter(Boolean).sort().pop();
+      el.innerHTML = '<h2>Site Health</h2>' + tabHtml + panelsHtml + stampHtml(latestDay);
+      initPropTabs(el, 'sitehealth-prop');
+
+      // wire up filters for each property panel
+      el.querySelectorAll('.site-health-wrap').forEach(function (wrap) {
+        const search = wrap.querySelector('.site-health-search');
+        const sevSel = wrap.querySelector('.site-health-severity');
+        const typeSel = wrap.querySelector('.site-health-type');
+        const count = wrap.querySelector('.site-health-count');
+        const rows = Array.prototype.slice.call(wrap.querySelectorAll('tbody tr'));
+        function apply() {
+          const q = search ? search.value.toLowerCase() : '';
+          const sev = sevSel ? sevSel.value : '';
+          const itype = typeSel ? typeSel.value : '';
+          var n = 0;
+          rows.forEach(function (r) {
+            var ok = true;
+            if (q && (r.getAttribute('data-search') || '').indexOf(q) === -1) ok = false;
+            if (ok && sev && r.getAttribute('data-severity') !== sev) ok = false;
+            if (ok && itype && r.getAttribute('data-issue') !== itype) ok = false;
+            r.style.display = ok ? '' : 'none';
+            if (ok) n++;
+          });
+          if (count) count.textContent = n + ' of ' + rows.length + ' issues';
+        }
+        [search, sevSel, typeSel].forEach(function (x) { if (x) x.addEventListener('input', apply); });
+        apply();
+      });
     } catch (e) {
       el.innerHTML = errorCard(e.message);
     }
@@ -3854,6 +3989,7 @@
       loadRank(),
       loadKeywords(),
       loadBacklinks(),
+      loadSiteHealth(),
       loadFreshness(),
       loadCannibalization(),
       loadContentInventory(),

@@ -588,6 +588,33 @@ async function handleFreshness(env, url) {
   return { day, rows };
 }
 
+// --------------------------------------------------------------- /api/sitehealth
+async function handleSiteHealth(env) {
+  // Latest run day per property
+  const runRows = await sbFetch(
+    env,
+    "/site_audit_runs?select=*&order=day.desc&limit=20"
+  );
+  const latestByProp = {};
+  for (const r of runRows) {
+    if (!latestByProp[r.property]) latestByProp[r.property] = r.day;
+  }
+
+  const result = {};
+  await Promise.all(
+    Object.entries(latestByProp).map(async ([prop, day]) => {
+      const p = `&property=eq.${encodeURIComponent(prop)}`;
+      const [issues, pages] = await Promise.all([
+        sbFetchAll(env, `/site_audit_issues?select=*&day=eq.${day}${p}&order=severity,issue_type,url`),
+        sbFetchAll(env, `/site_audit_pages?select=*&day=eq.${day}${p}&order=url`),
+      ]);
+      result[prop] = { day, run: runRows.find((r) => r.property === prop && r.day === day), issues, pages };
+    })
+  );
+
+  return result;
+}
+
 // ------------------------------------------------------------- /api/competitor
 async function handleCompetitor(env, url) {
   const property = url.searchParams.get("property") || "vantagecircle";
@@ -683,6 +710,7 @@ const CACHE_TTL = {
   backlinks: 3600,
   llm: 3600,
   freshness: 1800,
+  sitehealth: 1800,
   competitor: 1800,
   snapshots: 3600,
   actions: 300,
@@ -2162,6 +2190,7 @@ export default {
         else if (route === "backlinks") result = await handleBacklinks(env);
         else if (route === "llm") result = await handleLlm(env, url);
         else if (route === "freshness") result = await handleFreshness(env, url);
+        else if (route === "sitehealth") result = await handleSiteHealth(env);
         else if (route === "competitor") result = await handleCompetitor(env, url);
         else if (route === "snapshots") return await handleSnapshots(env, url);
         else if (route === "actions") result = await handleActions(env);
