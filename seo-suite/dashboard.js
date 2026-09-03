@@ -14,6 +14,7 @@
   // ---- global state ----
   let currentWorkspace = null;
   let currentProperties = {};
+  let PROPERTIES = currentProperties;
   let accessToken = null;
 
   const NOT_FOUND = 101;
@@ -430,6 +431,7 @@
     accessToken = null;
     currentWorkspace = null;
     currentProperties = {};
+    PROPERTIES = currentProperties;
     showAuthScreen(true);
   }
 
@@ -494,6 +496,7 @@
         saveWorkspacePreference(ws.id);
         const props = await fetchProperties();
         currentProperties = propertiesObject(props);
+        PROPERTIES = currentProperties;
         MODULES = buildModules(currentProperties);
         renderRail();
         renderSubnav(currentModuleId || 'overview');
@@ -554,6 +557,7 @@
 
   async function finishBoot(workspaces, properties) {
     currentProperties = propertiesObject(properties);
+    PROPERTIES = currentProperties;
     MODULES = buildModules(currentProperties);
     renderRail();
     renderWorkspaceSelector(workspaces);
@@ -4766,6 +4770,7 @@
         vantagecircle: { label: 'Vantage Circle', domain: 'vantagecircle.com' },
         vantagefit: { label: 'Vantage Fit', domain: 'vantagefit.io' }
       };
+      PROPERTIES = currentProperties;
       MODULES = buildModules(currentProperties);
       renderRail();
       initNavigation();
@@ -4790,6 +4795,7 @@
         accessToken = null;
         currentWorkspace = null;
         currentProperties = {};
+        PROPERTIES = currentProperties;
         showAuthScreen(true);
       } else if (event === 'SIGNED_IN' && session) {
         accessToken = session.access_token;
