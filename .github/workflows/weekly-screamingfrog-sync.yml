@@ -38,6 +38,17 @@ jobs:
           rm screamingfrog.deb
           screamingfrogseospider --version || true
 
+      - name: Verify Screaming Frog licence
+        env:
+          SCREAMING_FROG_LICENCE: ${{ secrets.SCREAMING_FROG_LICENCE }}
+        run: |
+          mkdir -p ~/.ScreamingFrogSEOSpider
+          printf '%s' "$SCREAMING_FROG_LICENCE" > ~/.ScreamingFrogSEOSpider/licence.txt
+          echo "Licence file lines: $(wc -l < ~/.ScreamingFrogSEOSpider/licence.txt)"
+          head -n 1 ~/.ScreamingFrogSEOSpider/licence.txt | sed 's/.*/first-line: [REDACTED]/'
+          tail -n 1 ~/.ScreamingFrogSEOSpider/licence.txt | sed 's/.*/last-line: [REDACTED]/'
+          screamingfrogseospider --version || true
+
       - name: Run Screaming Frog site audit
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
