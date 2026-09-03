@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
+          pip install -r seo-suite/requirements.txt || true
           pip install supabase
 
       - name: Install Screaming Frog SEO Spider
@@ -43,5 +43,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SCREAMING_FROG_LICENCE: ${{ secrets.SCREAMING_FROG_LICENCE }}
-        run: python seo_tools/seo-suite/site_audit.py --force --provider screamingfrog
+        run: python seo-suite/site_audit.py --force --provider screamingfrog
         working-directory: ${{ github.workspace }}
