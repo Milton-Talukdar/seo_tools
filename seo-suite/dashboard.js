@@ -1,10 +1,21 @@
 (function () {
   'use strict';
 
-  const PROPERTIES = {
-    vantagecircle: { label: 'Vantage Circle', domain: 'vantagecircle.com' },
-    vantagefit: { label: 'Vantage Fit', domain: 'vantagefit.io' },
-  };
+  // ---- Supabase client ----
+  const ORBIT_CONFIG = (typeof window !== 'undefined' && window.ORBIT_CONFIG) || {};
+  const SUPABASE_URL = ORBIT_CONFIG.SUPABASE_URL || '';
+  const SUPABASE_ANON_KEY = ORBIT_CONFIG.SUPABASE_ANON_KEY || '';
+
+  let supabase = null;
+  if (SUPABASE_URL && SUPABASE_ANON_KEY && typeof window !== 'undefined' && window.supabase) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+
+  // ---- global state ----
+  let currentWorkspace = null;
+  let currentProperties = {};
+  let accessToken = null;
+
   const NOT_FOUND = 101;
   const INTENT_SHORT = { informational: 'info', navigational: 'nav', commercial: 'com', transactional: 'trans' };
 
@@ -23,69 +34,131 @@
 
   const PLATFORM_NAMES = { chat_gpt: 'ChatGPT', perplexity: 'Perplexity', gemini: 'Gemini', copilot: 'Copilot' };
 
+  const SITE_HEALTH_ISSUES = {
+    status_4xx: { cat: 'error', desc: 'Page returns a 4xx HTTP status.', fix: 'Fix broken links or restore the missing page.' },
+    status_5xx: { cat: 'error', desc: 'Server returns a 5xx error.', fix: 'Investigate server logs and fix the underlying error.' },
+    redirect_chain: { cat: 'warning', desc: 'URL redirects through multiple hops.', fix: 'Update internal links to point directly to the final URL.' },
+    redirect_loop: { cat: 'error', desc: 'URL redirects back to itself in a loop.', fix: 'Remove or correct the redirect rule.' },
+    blocked_by_robots_txt: { cat: 'warning', desc: 'URL is disallowed by robots.txt.', fix: 'Allow the URL in robots.txt if it should be crawled.' },
+    sitemap_fetch_error: { cat: 'warning', desc: 'Sitemap could not be fetched or parsed.', fix: 'Ensure the sitemap URL returns a valid XML sitemap.' },
+    noindex_robots_meta: { cat: 'notice', desc: 'Page has a noindex robots meta tag.', fix: 'Remove noindex if the page should appear in search results.' },
+    x_robots_noindex: { cat: 'notice', desc: 'Page has an X-Robots-Tag: noindex header.', fix: 'Remove the header if the page should be indexed.' },
+    missing_canonical: { cat: 'warning', desc: 'Page has no canonical tag.', fix: 'Add a self-referencing canonical URL.' },
+    canonical_mismatch: { cat: 'warning', desc: 'Canonical URL does not match the final URL.', fix: 'Set the canonical to the preferred, final URL.' },
+    canonical_to_non_200: { cat: 'warning', desc: 'Canonical target returns a non-200 status.', fix: 'Point the canonical to a valid, indexable URL.' },
+    canonicalized_to_redirect: { cat: 'warning', desc: 'Canonical target is a redirect.', fix: 'Point the canonical directly to the final URL.' },
+    hreflang_missing_self_reference: { cat: 'warning', desc: 'Hreflang annotations are missing a self-referencing tag.', fix: 'Add a rel="alternate" hreflang tag pointing to the page itself.' },
+    hreflang_missing_return_tag: { cat: 'warning', desc: 'Hreflang target does not link back to this page.', fix: 'Ensure every hreflang pair has a reciprocal link.' },
+    hreflang_non_200: { cat: 'error', desc: 'Hreflang target returns a non-200 status.', fix: 'Update or remove the broken hreflang URL.' },
+    hreflang_invalid_code: { cat: 'warning', desc: 'Hreflang language/region code is invalid.', fix: 'Use valid BCP-47 codes (e.g., en, en-us, x-default).' },
+    missing_title: { cat: 'error', desc: 'Page has no title tag.', fix: 'Add a unique, descriptive <title>.' },
+    title_too_long: { cat: 'warning', desc: 'Title tag is longer than 60 characters.', fix: 'Shorten the title to ~50–60 characters.' },
+    missing_meta_description: { cat: 'warning', desc: 'Page has no meta description.', fix: 'Add a compelling meta description.' },
+    meta_description_too_long: { cat: 'notice', desc: 'Meta description is longer than 160 characters.', fix: 'Trim to ~150–160 characters.' },
+    missing_h1: { cat: 'error', desc: 'Page has no H1 tag.', fix: 'Add a single, descriptive H1.' },
+    multiple_h1: { cat: 'warning', desc: 'Page has more than one H1 tag.', fix: 'Use only one H1 per page.' },
+    missing_viewport: { cat: 'warning', desc: 'Page is missing a viewport meta tag.', fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1">.' },
+    thin_content: { cat: 'notice', desc: 'Page has fewer than 300 words.', fix: 'Expand the content with useful, original information.' },
+    missing_alt_text: { cat: 'warning', desc: 'Image is missing alt text.', fix: 'Add descriptive alt attributes to images.' },
+    mixed_content: { cat: 'warning', desc: 'HTTPS page loads internal resources over HTTP.', fix: 'Update resource URLs to use HTTPS.' },
+    missing_structured_data: { cat: 'notice', desc: 'No JSON-LD structured data found.', fix: 'Add relevant schema.org markup.' },
+    duplicate_title: { cat: 'warning', desc: 'Multiple pages share the same title.', fix: 'Write unique titles for each page.' },
+    duplicate_meta_description: { cat: 'warning', desc: 'Multiple pages share the same meta description.', fix: 'Write unique meta descriptions for each page.' },
+    duplicate_h1: { cat: 'warning', desc: 'Multiple pages share the same H1.', fix: 'Use unique H1s across pages.' },
+    internal_link_4xx: { cat: 'error', desc: 'Internal link points to a 4xx/5xx page.', fix: 'Update or remove the broken internal link.' },
+    internal_link_redirect: { cat: 'notice', desc: 'Internal link points to a redirect.', fix: 'Update the link to the final URL.' },
+    slow_lcp: { cat: 'warning', desc: 'Largest Contentful Paint is slower than 2.5 s.', fix: 'Optimize images, fonts, and server response time.' },
+    poor_cls: { cat: 'warning', desc: 'Cumulative Layout Shift is above 0.1.', fix: 'Reserve space for images, ads, and embeds.' },
+    canonical_chain: { cat: 'warning', desc: 'Canonical URL points to another canonicalized URL.', fix: 'Point the canonical directly to the final, indexable URL.' },
+    orphan_page: { cat: 'warning', desc: 'Page has no incoming internal links.', fix: 'Add internal links from relevant pages so it can be crawled.' },
+    render_blocking_resources: { cat: 'notice', desc: 'Page loads render-blocking CSS or JavaScript.', fix: 'Inline critical CSS, defer non-critical scripts, or load async.' },
+    structured_data_error: { cat: 'error', desc: 'Structured data has validation errors.', fix: 'Fix schema.org markup using Google’s Rich Results Test.' },
+    structured_data_warning: { cat: 'notice', desc: 'Structured data has validation warnings.', fix: 'Review and clean up optional schema fields.' },
+    duplicate_content: { cat: 'warning', desc: 'Page content is highly similar to another page.', fix: 'Consolidate or differentiate the duplicate pages.' },
+    external_link_4xx: { cat: 'notice', desc: 'External link points to a 4xx/5xx page.', fix: 'Update or remove the broken outbound link.' },
+    sitemap_url_not_crawled: { cat: 'warning', desc: 'URL is in the sitemap but was not reached by the crawl.', fix: 'Add internal links to the page or remove it from the sitemap.' },
+    crawled_url_not_in_sitemap: { cat: 'notice', desc: 'URL was crawled but is missing from the sitemap.', fix: 'Add indexable URLs to the XML sitemap.' },
+    multiple_title_tags: { cat: 'warning', desc: 'Page has more than one title tag.', fix: 'Keep a single, unique <title>.' },
+    heading_hierarchy_error: { cat: 'notice', desc: 'Heading tags skip levels or are out of order.', fix: 'Use a logical H1→H2→H3 hierarchy.' },
+  };
+
   function platformName(id) {
     const key = String(id || '').toLowerCase();
     return PLATFORM_NAMES[key] || String(id || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }
 
-  const MODULES = [
-    {
-      id: 'overview', label: 'Overview', icon: ICONS.overview,
-      groups: [
-        { label: 'Executive', sections: [{ id: 'summary', label: 'Executive Summary', panel: 'summary' }] }
-      ]
-    },
-    {
-      id: 'seo', label: 'SEO', icon: ICONS.seo,
-      groups: [
-        { label: 'Rank', sections: [{ id: 'rank', label: 'Rank Tracker', panel: 'rank', tab: 'vantagecircle' }] },
-        { label: 'Research', sections: [{ id: 'keywords', label: 'Keyword Research', panel: 'keywords' }] },
-        { label: 'Links', sections: [{ id: 'backlinks', label: 'Backlinks', panel: 'backlinks' }] },
-        { label: 'Health', sections: [{ id: 'sitehealth', label: 'Site Health', panel: 'sitehealth' }] }
-      ]
-    },
-    {
-      id: 'content', label: 'Content', icon: ICONS.content,
-      groups: [
-        { label: 'Maintenance', sections: [{ id: 'freshness', label: 'Freshness Queue', panel: 'freshness' }] },
-        { label: 'Quality', sections: [{ id: 'cannibalization', label: 'Cannibalization', panel: 'cannibalization' }] },
-        { label: 'Engine', sections: [
-          { id: 'content-inventory', label: 'Inventory', panel: 'content-inventory' },
-          { id: 'content-pipeline', label: 'Pipeline', panel: 'content-pipeline' },
-          { id: 'content-clusters', label: 'Topic Clusters', panel: 'content-clusters' },
-          { id: 'content-performance', label: 'Performance', panel: 'content-performance' },
-          { id: 'content-decay', label: 'Decay', panel: 'content-decay' },
-          { id: 'content-links', label: 'Internal Links', panel: 'content-links' },
-          { id: 'content-authors', label: 'Authors', panel: 'content-authors' }
-        ] }
-      ]
-    },
-    {
-      id: 'ai-search', label: 'AI Search', icon: ICONS.ai,
-      groups: [
-        { label: 'Visibility', sections: [
-          { id: 'llm-vc', label: 'Vantage Circle', panel: 'llm', tab: 'vantagecircle' },
-          { id: 'llm-vfit', label: 'Vantage Fit', panel: 'llm', tab: 'vantagefit' }
-        ]},
-        { label: 'Prompts', sections: [
-          { id: 'llm-prompts', label: 'Tracked Prompts', panel: 'llm-prompts' },
-          { id: 'gsc-llm-queries', label: 'GSC LLM Queries', panel: 'gsc-llm-queries' }
-        ]}
-      ]
-    },
-    {
-      id: 'competitors', label: 'Competitors', icon: ICONS.competitors,
-      groups: [
-        { label: 'Research', sections: [
-          { id: 'domain-overview', label: 'Domain Overview', panel: 'domain-overview' }
-        ]},
-        { label: 'Track', sections: [
-          { id: 'competitor-vc', label: 'Vantage Circle', panel: 'competitor', tab: 'vantagecircle' },
-          { id: 'competitor-vfit', label: 'Vantage Fit', panel: 'competitor', tab: 'vantagefit' }
-        ]}
-      ]
-    }
-  ];
+  // ---- dynamic modules from workspace properties ----
+  function buildModules(properties) {
+    const propSlugs = Object.keys(properties || {});
+    const firstProp = propSlugs[0] || null;
+
+    const llmSections = propSlugs.length
+      ? propSlugs.map(function (slug) {
+          return { id: 'llm-' + slug, label: properties[slug].label || slug, panel: 'llm', tab: slug };
+        })
+      : [{ id: 'llm-empty', label: 'No properties', panel: 'llm', tab: null }];
+
+    const competitorSections = propSlugs.length
+      ? propSlugs.map(function (slug) {
+          return { id: 'competitor-' + slug, label: properties[slug].label || slug, panel: 'competitor', tab: slug };
+        })
+      : [{ id: 'competitor-empty', label: 'No properties', panel: 'competitor', tab: null }];
+
+    return [
+      {
+        id: 'overview', label: 'Overview', icon: ICONS.overview,
+        groups: [
+          { label: 'Executive', sections: [{ id: 'summary', label: 'Executive Summary', panel: 'summary' }] }
+        ]
+      },
+      {
+        id: 'seo', label: 'SEO', icon: ICONS.seo,
+        groups: [
+          { label: 'Rank', sections: [{ id: 'rank', label: 'Rank Tracker', panel: 'rank', tab: firstProp }] },
+          { label: 'Research', sections: [{ id: 'keywords', label: 'Keyword Research', panel: 'keywords' }] },
+          { label: 'Links', sections: [{ id: 'backlinks', label: 'Backlinks', panel: 'backlinks' }] },
+          { label: 'Health', sections: [{ id: 'sitehealth', label: 'Site Health', panel: 'sitehealth' }] }
+        ]
+      },
+      {
+        id: 'content', label: 'Content', icon: ICONS.content,
+        groups: [
+          { label: 'Maintenance', sections: [{ id: 'freshness', label: 'Freshness Queue', panel: 'freshness' }] },
+          { label: 'Quality', sections: [{ id: 'cannibalization', label: 'Cannibalization', panel: 'cannibalization' }] },
+          { label: 'Engine', sections: [
+            { id: 'content-inventory', label: 'Inventory', panel: 'content-inventory' },
+            { id: 'content-pipeline', label: 'Pipeline', panel: 'content-pipeline' },
+            { id: 'content-clusters', label: 'Topic Clusters', panel: 'content-clusters' },
+            { id: 'content-performance', label: 'Performance', panel: 'content-performance' },
+            { id: 'content-decay', label: 'Decay', panel: 'content-decay' },
+            { id: 'content-links', label: 'Internal Links', panel: 'content-links' },
+            { id: 'content-authors', label: 'Authors', panel: 'content-authors' }
+          ] }
+        ]
+      },
+      {
+        id: 'ai-search', label: 'AI Search', icon: ICONS.ai,
+        groups: [
+          { label: 'Visibility', sections: llmSections },
+          { label: 'Prompts', sections: [
+            { id: 'llm-prompts', label: 'Tracked Prompts', panel: 'llm-prompts' },
+            { id: 'gsc-llm-queries', label: 'GSC LLM Queries', panel: 'gsc-llm-queries' }
+          ]}
+        ]
+      },
+      {
+        id: 'competitors', label: 'Competitors', icon: ICONS.competitors,
+        groups: [
+          { label: 'Research', sections: [
+            { id: 'domain-overview', label: 'Domain Overview', panel: 'domain-overview' }
+          ]},
+          { label: 'Track', sections: competitorSections }
+        ]
+      }
+    ];
+  }
+
+  let MODULES = buildModules(currentProperties);
 
   const COMPETITOR_TYPES = [
     ['', 'All types'],
@@ -230,6 +303,12 @@
   async function api(path, opts) {
     opts = opts || {};
     const init = { method: opts.method || 'GET', headers: {} };
+    if (accessToken) {
+      init.headers['Authorization'] = 'Bearer ' + accessToken;
+    }
+    if (currentWorkspace && currentWorkspace.id) {
+      init.headers['X-Workspace-ID'] = String(currentWorkspace.id);
+    }
     if (opts.body) {
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(opts.body);
@@ -237,7 +316,7 @@
     const res = await fetch('/api/' + path, init);
     if (!res.ok) {
       const text = await res.text().catch(function () { return 'unknown error'; });
-      throw new Error(res.status + ' ' + text);
+      return { error: res.status + ' ' + text };
     }
     return res.json();
   }
@@ -274,6 +353,251 @@
       '<div class="panel-head-row">' +
       '<div><h2>' + esc(title) + '</h2>' + (subtitle ? '<div class="sub">' + esc(subtitle) + '</div>' : '') + '</div>' +
       searchHtml + '</div></div>';
+  }
+
+  // ---- auth & workspace ----
+  const AUTH_LS_KEY = 'orbit_last_workspace';
+
+  function showAuthScreen(show) {
+    const authScreen = document.getElementById('auth-screen');
+    const appWrap = document.getElementById('app-wrap');
+    if (authScreen) authScreen.style.display = show ? 'flex' : 'none';
+    if (appWrap) appWrap.style.display = show ? 'none' : 'flex';
+  }
+
+  function setAuthError(msg) {
+    const el = document.getElementById('auth-error');
+    if (el) el.textContent = msg || '';
+  }
+
+  function initAuthUI() {
+    const form = document.getElementById('auth-form');
+    const toggle = document.getElementById('auth-toggle');
+    const submitBtn = document.getElementById('auth-submit');
+    if (!form || !supabase) return;
+
+    let mode = 'signin';
+
+    function updateToggle() {
+      if (!toggle || !submitBtn) return;
+      toggle.textContent = mode === 'signin' ? 'Create one' : 'Sign in instead';
+      submitBtn.textContent = mode === 'signin' ? 'Sign In' : 'Create Account';
+      const sub = form.parentNode.querySelector('.sub');
+      if (sub) sub.textContent = mode === 'signin'
+        ? 'SEO analytics for teams. Sign in to continue.'
+        : 'Create a workspace to get started.';
+    }
+
+    if (toggle) {
+      toggle.addEventListener('click', function (e) {
+        e.preventDefault();
+        mode = mode === 'signin' ? 'signup' : 'signin';
+        updateToggle();
+      });
+    }
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      setAuthError('');
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
+      if (!email || !password) return setAuthError('Enter email and password.');
+
+      let result;
+      if (mode === 'signin') {
+        result = await supabase.auth.signInWithPassword({ email: email, password: password });
+      } else {
+        result = await supabase.auth.signUp({ email: email, password: password });
+      }
+
+      if (result.error) {
+        setAuthError(result.error.message || 'Authentication failed.');
+        return;
+      }
+
+      if (mode === 'signup' && result.data && result.data.user && !result.data.session) {
+        setAuthError('Check your email to confirm your account, then sign in.');
+        return;
+      }
+
+      showAuthScreen(false);
+      await bootApp();
+    });
+  }
+
+  async function doLogout() {
+    if (supabase) await supabase.auth.signOut();
+    accessToken = null;
+    currentWorkspace = null;
+    currentProperties = {};
+    showAuthScreen(true);
+  }
+
+  async function ensureSession() {
+    if (!supabase) return null;
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data || !data.session) return null;
+    accessToken = data.session.access_token;
+    return data.session;
+  }
+
+  async function fetchWorkspaces() {
+    const res = await api('workspaces');
+    if (res && res.error) return [];
+    return Array.isArray(res) ? res : (res.workspaces || []);
+  }
+
+  async function fetchProperties() {
+    const res = await api('properties');
+    if (res && res.error) return [];
+    return Array.isArray(res) ? res : (res.properties || []);
+  }
+
+  function propertiesObject(propertiesArray) {
+    const obj = {};
+    (propertiesArray || []).forEach(function (p) {
+      const slug = p.slug || p.id || p.domain;
+      if (slug) obj[slug] = { label: p.label || p.domain || slug, domain: p.domain || slug, brands: p.brands || [], you: p.you || [] };
+    });
+    return obj;
+  }
+
+  function saveWorkspacePreference(id) {
+    try { localStorage.setItem(AUTH_LS_KEY, id); } catch (e) {}
+  }
+
+  function loadWorkspacePreference() {
+    try { return localStorage.getItem(AUTH_LS_KEY); } catch (e) { return null; }
+  }
+
+  function renderWorkspaceSelector(workspaces) {
+    const rail = document.getElementById('vc-rail');
+    if (!rail) return;
+    let wrap = rail.querySelector('.vc-rail-workspace');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.className = 'vc-rail-workspace';
+      rail.insertBefore(wrap, rail.firstChild.nextSibling);
+    }
+    const options = (workspaces || []).map(function (w) {
+      return '<option value="' + esc(w.id) + '"' + (currentWorkspace && currentWorkspace.id === w.id ? ' selected' : '') + '>' + esc(w.name || w.slug || w.id) + '</option>';
+    }).join('');
+    wrap.innerHTML = '<label class="visually-hidden" for="workspace-select">Workspace</label>' +
+      '<select id="workspace-select" class="workspace-select">' + options + '</select>';
+    const select = document.getElementById('workspace-select');
+    if (select) {
+      select.addEventListener('change', async function () {
+        const id = select.value;
+        const ws = (workspaces || []).find(function (w) { return String(w.id) === String(id); });
+        if (!ws) return;
+        currentWorkspace = ws;
+        saveWorkspacePreference(ws.id);
+        const props = await fetchProperties();
+        currentProperties = propertiesObject(props);
+        MODULES = buildModules(currentProperties);
+        renderRail();
+        renderSubnav(currentModuleId || 'overview');
+        await bootDashboardPanels();
+      });
+    }
+  }
+
+  async function createWorkspace(name, domain) {
+    const wsRes = await api('workspaces', { method: 'POST', body: { name: name } });
+    if (wsRes && wsRes.error) return { error: wsRes.error };
+    const ws = Array.isArray(wsRes) ? wsRes[0] : wsRes;
+    if (!ws || !ws.id) return { error: 'Workspace creation failed.' };
+    currentWorkspace = ws;
+    saveWorkspacePreference(ws.id);
+    const propRes = await api('properties', { method: 'POST', body: { slug: domain.replace(/\W+/g, '-').toLowerCase(), label: domain, domain: domain } });
+    if (propRes && propRes.error) return { error: propRes.error };
+    return { workspace: ws };
+  }
+
+  function showOnboarding() {
+    const appWrap = document.getElementById('app-wrap');
+    if (!appWrap) return;
+    let wrap = document.getElementById('onboarding-wrap');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = 'onboarding-wrap';
+      wrap.className = 'onboarding-wrap';
+      appWrap.insertBefore(wrap, appWrap.firstChild);
+    }
+    wrap.innerHTML = '<div class="card" style="max-width:480px;margin:40px auto">' +
+      '<h2>Create your workspace</h2>' +
+      '<p class="sub">Add a workspace name and your first domain to start tracking.</p>' +
+      '<label class="visually-hidden" for="onboard-name">Workspace name</label>' +
+      '<input id="onboard-name" type="text" placeholder="Workspace name">' +
+      '<label class="visually-hidden" for="onboard-domain">Domain</label>' +
+      '<input id="onboard-domain" type="text" placeholder="example.com" style="margin-top:12px">' +
+      '<button id="onboard-submit" class="btn-primary" style="margin-top:16px">Create Workspace</button>' +
+      '<p id="onboard-error" class="auth-error"></p>' +
+      '</div>';
+    document.getElementById('onboard-submit').addEventListener('click', async function () {
+      const name = document.getElementById('onboard-name').value.trim();
+      const domain = document.getElementById('onboard-domain').value.trim();
+      const errEl = document.getElementById('onboard-error');
+      if (!name || !domain) {
+        if (errEl) errEl.textContent = 'Enter a workspace name and domain.';
+        return;
+      }
+      const result = await createWorkspace(name, domain);
+      if (result.error) {
+        if (errEl) errEl.textContent = result.error;
+        return;
+      }
+      if (wrap) wrap.style.display = 'none';
+      await finishBoot([], []);
+    });
+  }
+
+  async function finishBoot(workspaces, properties) {
+    currentProperties = propertiesObject(properties);
+    MODULES = buildModules(currentProperties);
+    renderRail();
+    renderWorkspaceSelector(workspaces);
+    initNavigation();
+    await bootDashboardPanels();
+  }
+
+  async function bootDashboardPanels() {
+    const panels = [
+      loadSummary(), loadRank(), loadKeywords(), loadBacklinks(), loadSiteHealth(),
+      loadFreshness(), loadCannibalization(), loadContentInventory(), loadContentPipeline(),
+      loadContentClusters(), loadContentPerformance(), loadContentDecay(), loadContentLinks(),
+      loadContentAuthors(), loadLLM(), loadLlmPrompts(), loadGscLlmQueries(),
+      loadCompetitor(), loadDomainOverview()
+    ];
+    await Promise.all(panels).catch(function (e) {
+      console.error('Dashboard load error:', e);
+    }).finally(function () {
+      var r = parseHash();
+      if (r) activateSection(r.section, r.tab);
+    });
+  }
+
+  async function bootApp() {
+    const session = await ensureSession();
+    if (!session) {
+      showAuthScreen(true);
+      return;
+    }
+    accessToken = session.access_token;
+    showAuthScreen(false);
+
+    const workspaces = await fetchWorkspaces();
+    if (!workspaces.length) {
+      showOnboarding();
+      return;
+    }
+
+    const preferredId = loadWorkspacePreference();
+    currentWorkspace = workspaces.find(function (w) { return String(w.id) === String(preferredId); }) || workspaces[0];
+    saveWorkspacePreference(currentWorkspace.id);
+
+    const properties = await fetchProperties();
+    await finishBoot(workspaces, properties);
   }
 
   // Recent keyword searches (localStorage)
@@ -790,9 +1114,9 @@
     const issues = data.issues || [];
     const pages = data.pages || [];
 
-    const critical = issues.filter(function (i) { return i.severity === 'critical'; }).length;
-    const warning = issues.filter(function (i) { return i.severity === 'warning'; }).length;
-    const info = issues.filter(function (i) { return i.severity === 'info'; }).length;
+    const errors = issues.filter(function (i) { return i.severity === 'critical'; }).length;
+    const warnings = issues.filter(function (i) { return i.severity === 'warning'; }).length;
+    const notices = issues.filter(function (i) { return i.severity === 'info'; }).length;
 
     const psiScores = pages.map(function (p) { return p.performance_score; }).filter(function (v) { return v != null; });
     const avgPerf = psiScores.length ? Math.round(psiScores.reduce(function (a, b) { return a + b; }, 0) / psiScores.length) : null;
@@ -805,11 +1129,19 @@
     function sevCls(s) {
       return s === 'critical' ? 'none' : (s === 'warning' ? 'cite' : '');
     }
+    function catCls(cat) {
+      return cat === 'error' ? 'none' : (cat === 'warning' ? 'cite' : '');
+    }
 
+    const sourceLabels = {
+      dataforseo: 'Crawled by DataForSEO',
+      screamingfrog: 'Crawled by Screaming Frog',
+    };
+    const sourceLabel = sourceLabels[run.crawl_source] || 'Crawled by Orbit';
     const kpiCards = [
-      { num: run.pages_crawled || 0, label: 'Pages crawled' },
+      { num: run.pages_crawled || 0, label: 'Pages crawled', sub: sourceLabel },
       { num: run.pages_failed || 0, label: 'Failed fetches' },
-      { num: issues.length, label: 'Issues found', sub: critical + ' critical · ' + warning + ' warnings' },
+      { num: issues.length, label: 'Issues found', sub: errors + ' errors · ' + warnings + ' warnings · ' + notices + ' notices' },
     ];
     if (avgPerf != null) {
       kpiCards.push({ num: avgPerf, label: 'Avg PSI performance', sub: 'Lighthouse score' });
@@ -820,8 +1152,19 @@
         (c.sub ? '<br><span class="sub">' + esc(c.sub) + '</span>' : '') + '</div></div>';
     }).join('') + '</div>';
 
+    const categoryCards = '<div class="kpis site-health-cats">' +
+      '<div class="kpi"><div class="num none">' + esc(fmtNum(errors)) + '</div><div class="label">Errors</div></div>' +
+      '<div class="kpi"><div class="num cite">' + esc(fmtNum(warnings)) + '</div><div class="label">Warnings</div></div>' +
+      '<div class="kpi"><div class="num">' + esc(fmtNum(notices)) + '</div><div class="label">Notices</div></div>' +
+      '</div>';
+
     const breakdownRows = Object.entries(issueTypeCounts).sort(function (a, b) { return b[1] - a[1]; }).map(function (e) {
-      return '<tr><td><span class="chip">' + esc(e[0].replace(/_/g, ' ')) + '</span></td><td class="num">' + esc(fmtNum(e[1])) + '</td></tr>';
+      const def = SITE_HEALTH_ISSUES[e[0]] || {};
+      const cat = def.cat || 'notice';
+      const titleAttr = def.desc ? ' title="' + esc(def.desc) + '"' : '';
+      return '<tr>' +
+        '<td><span class="chip ' + catCls(cat) + '"' + titleAttr + '>' + esc(e[0].replace(/_/g, ' ')) + '</span></td>' +
+        '<td class="num">' + esc(fmtNum(e[1])) + '</td></tr>';
     }).join('');
     const breakdownHtml = breakdownRows ?
       '<div class="card"><b>Issue breakdown</b><table><thead><tr><th>Issue type</th><th>Count</th></tr></thead><tbody>' + breakdownRows + '</tbody></table></div>' : '';
@@ -830,9 +1173,11 @@
       var display = i.url.replace(/^https?:\/\//, '');
       if (display.length > 70) display = display.slice(0, 67) + '…';
       var search = [i.url, i.issue_type, i.severity, i.details || ''].join(' ').toLowerCase();
-      return '<tr data-search="' + esc(search) + '" data-severity="' + esc(i.severity) + '" data-issue="' + esc(i.issue_type) + '">' +
+      const def = SITE_HEALTH_ISSUES[i.issue_type] || {};
+      const cat = def.cat || (i.severity === 'critical' ? 'error' : (i.severity === 'warning' ? 'warning' : 'notice'));
+      return '<tr data-search="' + esc(search) + '" data-severity="' + esc(i.severity) + '" data-issue="' + esc(i.issue_type) + '" data-cat="' + esc(cat) + '">' +
         '<td><a href="' + esc(i.url) + '" target="_blank">' + esc(display) + '</a></td>' +
-        '<td><span class="chip">' + esc(i.issue_type.replace(/_/g, ' ')) + '</span></td>' +
+        '<td><span class="chip ' + catCls(cat) + '" title="' + esc(def.desc || '') + '">' + esc(i.issue_type.replace(/_/g, ' ')) + '</span></td>' +
         '<td><span class="chip ' + sevCls(i.severity) + '">' + esc(i.severity) + '</span></td>' +
         '<td class="sub">' + esc(i.details || '') + '</td></tr>';
     }).join('');
@@ -848,12 +1193,13 @@
       '<input class="site-health-search" type="search" placeholder="Search issues…">' +
       '<select class="site-health-severity">' + sevOpts + '</select>' +
       '<select class="site-health-type">' + typeOpts + '</select>' +
+      '<button class="btn site-health-export" type="button">Export CSV</button>' +
       '<span class="site-health-count sub">' + issues.length + ' issues</span></div>' +
       '<table class="site-health-table"><thead><tr>' +
       '<th>Page</th><th>Issue</th><th>Severity</th><th>Details</th>' +
       '</tr></thead><tbody>' + (issueRows || '<tr><td colspan="4" class="sub">No issues found.</td></tr>') + '</tbody></table></div>';
 
-    return kpiHtml + breakdownHtml + tableHtml;
+    return kpiHtml + categoryCards + breakdownHtml + tableHtml;
   }
 
   async function loadSiteHealth() {
@@ -885,13 +1231,17 @@
       el.innerHTML = panelHead('Site Health', 'Technical audit findings from Lighthouse and crawl checks.') + tabHtml + panelsHtml + stampHtml(latestDay);
       initPropTabs(el, 'sitehealth-prop');
 
-      // wire up filters for each property panel
+      // wire up filters and export for each property panel
       el.querySelectorAll('.site-health-wrap').forEach(function (wrap) {
         const search = wrap.querySelector('.site-health-search');
         const sevSel = wrap.querySelector('.site-health-severity');
         const typeSel = wrap.querySelector('.site-health-type');
+        const exportBtn = wrap.querySelector('.site-health-export');
         const count = wrap.querySelector('.site-health-count');
         const rows = Array.prototype.slice.call(wrap.querySelectorAll('tbody tr'));
+        function visibleRows() {
+          return rows.filter(function (r) { return r.style.display !== 'none'; });
+        }
         function apply() {
           const q = search ? search.value.toLowerCase() : '';
           const sev = sevSel ? sevSel.value : '';
@@ -908,6 +1258,28 @@
           if (count) count.textContent = n + ' of ' + rows.length + ' issues';
         }
         [search, sevSel, typeSel].forEach(function (x) { if (x) x.addEventListener('input', apply); });
+        if (exportBtn) {
+          exportBtn.addEventListener('click', function () {
+            const lines = visibleRows().map(function (r) {
+              const cells = r.querySelectorAll('td');
+              return [
+                cells[0] ? cells[0].textContent.trim() : '',
+                cells[1] ? cells[1].textContent.trim() : '',
+                cells[2] ? cells[2].textContent.trim() : '',
+                cells[3] ? cells[3].textContent.trim() : ''
+              ].map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');
+            });
+            const csv = 'URL,Issue,Severity,Details\n' + lines.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'site-health-' + new Date().toISOString().slice(0, 10) + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+          });
+        }
         apply();
       });
     } catch (e) {
@@ -1942,13 +2314,14 @@
   function renderRail() {
     var rail = document.getElementById('vc-rail');
     if (!rail) return;
-    var html = '<div class="vc-rail-logo"><div class="vc-rail-logo__mark">VC</div></div>';
+    var html = '<div class="vc-rail-logo"><div class="vc-rail-logo__mark">O</div></div>';
     MODULES.forEach(function (m) {
       var first = m.groups[0].sections[0].id;
       html += '<a class="vc-rail-item" href="#/' + esc(m.id) + '/' + esc(first) + '" data-module="' + esc(m.id) + '">' +
         m.icon + '<span class="lab">' + esc(m.label) + '</span></a>';
     });
-    html += '<div class="vc-rail-foot"><span>SEO Suite</span></div>';
+    html += '<div class="vc-rail-foot"><span>Orbit</span>' +
+      '<button id="logout-btn" class="logout-btn" type="button" title="Sign out">' + ICONS.user + '</button></div>';
     rail.innerHTML = html;
     rail.querySelectorAll('.vc-rail-item').forEach(function (it) {
       it.addEventListener('click', function (e) {
@@ -1958,6 +2331,8 @@
         location.hash = '#/' + modId + '/' + first;
       });
     });
+    var logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) logoutBtn.addEventListener('click', doLogout);
   }
 
   function renderSubnav(moduleId) {
@@ -4384,33 +4759,54 @@
 
   // ---------------------------------------------------------------- boot
   document.addEventListener('DOMContentLoaded', function () {
-    initNavigation();
-    Promise.all([
-      loadSummary(),
-      loadRank(),
-      loadKeywords(),
-      loadBacklinks(),
-      loadSiteHealth(),
-      loadFreshness(),
-      loadCannibalization(),
-      loadContentInventory(),
-      loadContentPipeline(),
-      loadContentClusters(),
-      loadContentPerformance(),
-      loadContentDecay(),
-      loadContentLinks(),
-      loadContentAuthors(),
-      loadLLM(),
-      loadLlmPrompts(),
-      loadGscLlmQueries(),
-      loadCompetitor(),
-      loadDomainOverview(),
-    ]).catch(function (e) {
-      console.error('Dashboard load error:', e);
-    }).finally(function () {
-      // Re-apply the hash section/tab now that async content (prop tabs) exists.
-      var r = parseHash();
-      if (r) activateSection(r.section, r.tab);
+    // legacy: without Supabase config, behave like the old dashboard
+    if (!supabase) {
+      currentWorkspace = { id: 'legacy' };
+      currentProperties = {
+        vantagecircle: { label: 'Vantage Circle', domain: 'vantagecircle.com' },
+        vantagefit: { label: 'Vantage Fit', domain: 'vantagefit.io' }
+      };
+      MODULES = buildModules(currentProperties);
+      renderRail();
+      initNavigation();
+      Promise.all([
+        loadSummary(), loadRank(), loadKeywords(), loadBacklinks(), loadSiteHealth(),
+        loadFreshness(), loadCannibalization(), loadContentInventory(), loadContentPipeline(),
+        loadContentClusters(), loadContentPerformance(), loadContentDecay(), loadContentLinks(),
+        loadContentAuthors(), loadLLM(), loadLlmPrompts(), loadGscLlmQueries(),
+        loadCompetitor(), loadDomainOverview()
+      ]).catch(function (e) {
+        console.error('Dashboard load error:', e);
+      }).finally(function () {
+        var r = parseHash();
+        if (r) activateSection(r.section, r.tab);
+      });
+      return;
+    }
+
+    initAuthUI();
+    supabase.auth.onAuthStateChange(function (event, session) {
+      if (event === 'SIGNED_OUT') {
+        accessToken = null;
+        currentWorkspace = null;
+        currentProperties = {};
+        showAuthScreen(true);
+      } else if (event === 'SIGNED_IN' && session) {
+        accessToken = session.access_token;
+        showAuthScreen(false);
+        bootApp();
+      } else if (event === 'TOKEN_REFRESHED' && session) {
+        accessToken = session.access_token;
+      }
+    });
+
+    ensureSession().then(function (session) {
+      if (session) {
+        showAuthScreen(false);
+        bootApp();
+      } else {
+        showAuthScreen(true);
+      }
     });
   });
 })();

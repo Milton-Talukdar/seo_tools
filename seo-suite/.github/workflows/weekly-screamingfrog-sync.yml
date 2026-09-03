@@ -1,0 +1,47 @@
+name: Weekly Screaming Frog site audit
+
+on:
+  schedule:
+    # Every Sunday at 04:00 UTC — deep technical crawl before Monday standups
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || true
+          pip install supabase
+
+      - name: Install Screaming Frog SEO Spider
+        env:
+          SCREAMING_FROG_DEB_URL: ${{ secrets.SCREAMING_FROG_DEB_URL }}
+        run: |
+          if [ -z "$SCREAMING_FROG_DEB_URL" ]; then
+            echo "SCREAMING_FROG_DEB_URL secret is required to install Screaming Frog in CI"
+            exit 1
+          fi
+          curl -L -o screamingfrog.deb "$SCREAMING_FROG_DEB_URL"
+          sudo apt-get update
+          sudo apt-get install -y ./screamingfrog.deb
+          rm screamingfrog.deb
+          screamingfrogseospider --version || true
+
+      - name: Run Screaming Frog site audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SCREAMING_FROG_LICENCE: ${{ secrets.SCREAMING_FROG_LICENCE }}
+        run: python seo_tools/seo-suite/site_audit.py --force --provider screamingfrog
+        working-directory: ${{ github.workspace }}

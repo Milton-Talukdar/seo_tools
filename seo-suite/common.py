@@ -97,7 +97,7 @@ def load_env():
         return
 
 
-def dfs_post(path, payload, retries=2, timeout=180):
+def dfs_post(path, payload, retries=2, timeout=180, full_task=False):
     auth = base64.b64encode(
         f"{os.environ['DATAFORSEO_LOGIN']}:{os.environ['DATAFORSEO_PASSWORD']}".encode()
     ).decode()
@@ -113,9 +113,11 @@ def dfs_post(path, payload, retries=2, timeout=180):
             with request.urlopen(req, timeout=timeout) as r:
                 data = json.load(r)
             task = data["tasks"][0]
-            if task.get("status_code") != 20000:
+            if task.get("status_code") not in (20000, 20100):
                 raise RuntimeError(f"DFS {task.get('status_code')}: "
                                    f"{task.get('status_message')}")
+            if full_task:
+                return task
             return task.get("result") or []
         except Exception:
             if attempt == retries:
@@ -231,6 +233,7 @@ def init_db():
         day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle',
         pages_crawled INTEGER, pages_failed INTEGER, issues_found INTEGER,
         psi_calls INTEGER, run_duration_seconds INTEGER,
+        crawl_source TEXT DEFAULT 'custom',
         PRIMARY KEY(day, property));
     CREATE TABLE IF NOT EXISTS site_audit_pages(
         day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle', url TEXT,
@@ -240,6 +243,8 @@ def init_db():
         redirect_count INTEGER, lcp REAL, inp REAL, cls REAL,
         performance_score INTEGER, seo_score INTEGER, psi_status TEXT,
         fetch_error TEXT,
+        inlinks INTEGER, outlinks INTEGER, response_time_ms INTEGER,
+        structured_data_types TEXT, lighthouse_performance INTEGER,
         PRIMARY KEY(day, property, url));
     CREATE TABLE IF NOT EXISTS site_audit_issues(
         day TEXT, property TEXT NOT NULL DEFAULT 'vantagecircle', url TEXT,
@@ -340,6 +345,26 @@ def init_db():
                 PRIMARY KEY(day, property, url))
         """)
         print("[db] created backlink_pages table")
+
+    # v8 migration: site_audit_runs gains a crawl_source column
+    cols = [r[1] for r in con.execute("PRAGMA table_info(site_audit_runs)")]
+    if cols and "crawl_source" not in cols:
+        con.execute("ALTER TABLE site_audit_runs ADD COLUMN crawl_source TEXT DEFAULT 'custom'")
+        print("[db] migrated site_audit_runs: added crawl_source")
+
+    # v9 migration: site_audit_pages gains Screaming Frog-derived metrics
+    cols = [r[1] for r in con.execute("PRAGMA table_info(site_audit_pages)")]
+    if cols:
+        for col, dtype in (
+            ("inlinks", "INTEGER"),
+            ("outlinks", "INTEGER"),
+            ("response_time_ms", "INTEGER"),
+            ("structured_data_types", "TEXT"),
+            ("lighthouse_performance", "INTEGER"),
+        ):
+            if col not in cols:
+                con.execute(f"ALTER TABLE site_audit_pages ADD COLUMN {col} {dtype}")
+                print(f"[db] migrated site_audit_pages: added {col}")
 
     return con
 
