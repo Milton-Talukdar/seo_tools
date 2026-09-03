@@ -44,10 +44,14 @@ jobs:
         run: |
           mkdir -p ~/.ScreamingFrogSEOSpider
           printf '%s' "$SCREAMING_FROG_LICENCE" > ~/.ScreamingFrogSEOSpider/licence.txt
-          echo "Licence file lines: $(wc -l < ~/.ScreamingFrogSEOSpider/licence.txt)"
-          head -n 1 ~/.ScreamingFrogSEOSpider/licence.txt | sed 's/.*/first-line: [REDACTED]/'
-          tail -n 1 ~/.ScreamingFrogSEOSpider/licence.txt | sed 's/.*/last-line: [REDACTED]/'
-          screamingfrogseospider --version || true
+          bytes=$(wc -c < ~/.ScreamingFrogSEOSpider/licence.txt)
+          lines=$(awk 'END{print NR}' ~/.ScreamingFrogSEOSpider/licence.txt)
+          echo "Licence file bytes: $bytes"
+          echo "Licence file lines: $lines"
+          if [ "$bytes" -lt 100 ]; then
+            echo "ERROR: SCREAMING_FROG_LICENCE secret appears too short. Copy the entire licence.txt contents from Screaming Frog."
+            exit 1
+          fi
 
       - name: Run Screaming Frog site audit
         env:
