@@ -186,7 +186,14 @@ def _build_crawl_args(
 
 def _run_sf(cli_args: List[str], timeout: int = CLI_TIMEOUT_SECONDS) -> subprocess.CompletedProcess:
     print(f"  running: {' '.join(cli_args[:5])} ...")
-    return subprocess.run(cli_args, capture_output=True, text=True, timeout=timeout)
+    proc = subprocess.run(cli_args, capture_output=True, text=True, timeout=timeout)
+    if proc.returncode != 0:
+        return proc
+    # Surface licence / fatal errors even when exit code is 0
+    combined = (proc.stdout or "") + (proc.stderr or "")
+    if "licence expired" in combined.lower() or "failed to start" in combined.lower():
+        proc.returncode = 1
+    return proc
 
 
 def _find_export_file(output_dir: Path, tab: str) -> Path:
@@ -200,11 +207,11 @@ def _find_export_file(output_dir: Path, tab: str) -> Path:
     for cand in candidates:
         if cand.exists():
             return cand
-    # last resort glob
-    pattern = tab.split(":")[-1].replace(" ", "_").replace("(", "*").replace(")", "*")
-    matches = list(output_dir.glob(f"*{pattern}*.csv"))
-    if matches:
-        return matches[0]
+    # last resort: scan CSV filenames for the tab tail (case-insensitive)
+    tab_tail = tab.split(":")[-1].replace(" ", "_").replace("(", "").replace(")", "").lower()
+    for p in output_dir.glob("*.csv"):
+        if tab_tail in p.name.lower():
+            return p
     return None
 
 
@@ -555,9 +562,15 @@ def run_for_property(property: str, sitemaps: list, limit: int = 0) -> Tuple[dic
 
     print(f"[{property}] crawl complete; parsing exports from {output_dir}")
     paths = {tab: _find_export_file(output_dir, tab) for tab in EXPORT_TABS}
-    for tab, p in paths.items():
-        if not p:
-            print(f"  [warn] missing export for {tab}")
+    missing = [tab for tab, p in paths.items() if not p]
+    for tab in missing:
+        print(f"  [warn] missing export for {tab}")
+
+    if len(missing) == len(EXPORT_TABS):
+        raise RuntimeError(
+            "Screaming Frog produced no CSV exports. Common causes: "
+            "expired/missing licence, empty crawl list, or unsupported SF version."
+        )
 
     pages = _parse_internal_csv(paths.get("Internal:All"))
 
