@@ -1,0 +1,12 @@
+site/node_modules/
+site/dist/
+site/.astro/
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+reports/
+cache/
+*.log
+.DS_Store

@@ -1,0 +1,14 @@
+.DS_Store
+*/.DS_Store
+__pycache__/
+*/__pycache__/
+*.pyc
+.env
+.env.*
+.wrangler/
+node_modules/
+*/node_modules/
+.astro/
+*/.astro/
+dist/
+*/dist/

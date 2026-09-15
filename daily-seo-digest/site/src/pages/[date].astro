@@ -1,0 +1,171 @@
+---
+import Layout from '../layouts/Layout.astro';
+import fs from 'fs';
+import path from 'path';
+
+export function getStaticPaths() {
+  const reportsDir = path.join(process.cwd(), '..', 'reports');
+  const paths: { params: { date: string } }[] = [];
+  try {
+    const files = fs.readdirSync(reportsDir).filter(f => f.endsWith('.md') && f !== 'weekly-latest.md');
+    for (const file of files) {
+      paths.push({ params: { date: file.replace('.md', '') } });
+    }
+  } catch (e) {}
+  return paths;
+}
+
+const { date } = Astro.params;
+const reportsDir = path.join(process.cwd(), '..', 'reports');
+const filePath = path.join(reportsDir, `${date}.md`);
+
+let content = '';
+try {
+  content = fs.readFileSync(filePath, 'utf-8');
+} catch (e) {
+  content = '# Report not found';
+}
+
+function parseReport(md: string) {
+  const sections: { title: string; level: number; content: string; emoji: string; className: string }[] = [];
+  const lines = md.split('\n');
+  let currentSection: typeof sections[0] | null = null;
+
+  for (const line of lines) {
+    const headerMatch = line.match(/^(#{1,3})\s+(.*)/);
+    if (headerMatch) {
+      if (currentSection) sections.push(currentSection);
+      const title = headerMatch[2].trim();
+      const level = headerMatch[1].length;
+      const emojiMatch = title.match(/^(🔴|🟡|🟢|📰|📝)\s*/);
+      const emoji = emojiMatch ? emojiMatch[1] : '';
+      const cleanTitle = title.replace(/^(🔴|🟡|🟢|📰|📝)\s*/, '');
+
+      let className = '';
+      if (emoji === '🔴') className = 'action';
+      else if (emoji === '🟡') className = 'watch';
+      else if (emoji === '🟢') className = 'learn';
+      else if (emoji === '📰') className = 'fyi';
+
+      currentSection = { title: cleanTitle, level, content: '', emoji, className };
+    } else if (currentSection) {
+      currentSection.content += line + '\n';
+    }
+  }
+  if (currentSection) sections.push(currentSection);
+  return sections;
+}
+
+function parseContent(content: string) {
+  const items: { type: string; content: string; link?: string; source?: string; summary?: string; tags?: string[] }[] = [];
+  const lines = content.trim().split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    const articleMatch = line.match(/^\*\*\[(.*?)\]\((.*?)\)\*\*\s*—\s*\*(.*?)\*/);
+    if (articleMatch) {
+      items.push({ type: 'article', content: articleMatch[1], link: articleMatch[2], source: articleMatch[3] });
+      continue;
+    }
+
+    const summaryMatch = line.match(/^>(.*)/);
+    if (summaryMatch && items.length > 0) {
+      const last = items[items.length - 1];
+      if (last.type === 'article') {
+        last.summary = (last.summary || '') + summaryMatch[1].trim() + ' ';
+      }
+      continue;
+    }
+
+    const tagMatch = line.match(/🏷️\s*(.*)/);
+    if (tagMatch && items.length > 0) {
+      const last = items[items.length - 1];
+      if (last.type === 'article') {
+        const tagStr = tagMatch[1];
+        last.tags = tagStr.match(/`([^`]+)`/g)?.map(t => t.replace(/`/g, '')) || [];
+      }
+      continue;
+    }
+
+    const fyiMatch = line.match(/^-\s*\*\*\[(.*?)\]\((.*?)\)\*\*\s*—\s*\*(.*?)\*/);
+    if (fyiMatch) {
+      items.push({ type: 'fyi', content: fyiMatch[1], link: fyiMatch[2], source: fyiMatch[3] });
+    }
+  }
+
+  return items;
+}
+
+const sections = parseReport(content);
+const formatDate = (dateStr: string) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+};
+
+function countClass(emoji: string) {
+  switch (emoji) {
+    case '🔴': return 'count-action';
+    case '🟡': return 'count-watch';
+    case '🟢': return 'count-learn';
+    case '📰': return 'count-fyi';
+    default: return '';
+  }
+}
+---
+
+<Layout title={`SEO Digest — ${formatDate(date)}`}>
+  <a href="/" class="back">← All reports</a>
+  <h1 style="font-size: 1.875rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.25rem;">{formatDate(date)}</h1>
+  <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 1.5rem;">Twice-weekly intelligence summary</p>
+
+  {sections.map(section => {
+    const items = parseContent(section.content);
+    const countCls = countClass(section.emoji);
+
+    if (section.level === 1) return null;
+
+    return (
+      <div>
+        <div class="section-header">
+          <span>{section.emoji}</span>
+          <h2>{section.title}</h2>
+          {items.length > 0 && <span class={`section-count ${countCls}`}>{items.length}</span>}
+        </div>
+
+        {section.content.includes('require immediate attention') || section.content.includes('monitor these') || section.content.includes('new concepts') || section.content.includes('everything else') ? (
+          <p style="color: var(--text-secondary); font-size: 0.9rem; margin: -0.5rem 0 1rem;">
+            {section.content.split('\n')[0].replace(/^>/, '').trim()}
+          </p>
+        ) : null}
+
+        {items.map(item => (
+          <article class={`card ${section.className}`}>
+            {item.type === 'article' ? (
+              <>
+                <h3><a href={item.link} target="_blank" rel="noopener">{item.content}</a></h3>
+                <div class="source">{item.source}{item.source === 'Search Engine Journal' && <span class="source-badge">★ Featured</span>}</div>
+                {item.summary && (
+                  <div class="summary">
+                    {item.summary.replace(/<[^>]+>/g, '').substring(0, 280)}
+                    {item.summary.length > 280 ? '…' : ''}
+                  </div>
+                )}
+                {item.tags && item.tags.length > 0 && (
+                  <div class="tags">
+                    {item.tags.map(tag => <span class="tag-item">{tag}</span>)}
+                  </div>
+                )}
+              </>
+            ) : item.type === 'fyi' ? (
+              <>
+                <h3><a href={item.link} target="_blank" rel="noopener">{item.content}</a></h3>
+                <div class="source">{item.source}</div>
+              </>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    );
+  })}
+</Layout>

@@ -1,0 +1,126 @@
+# SEO News Digest — Configuration
+# Add/remove sources as needed. Keep RSS feeds only.
+
+sources:
+  - name: "Google Search Central"
+    url: "https://developers.google.com/search/blog/rss"
+    priority: high
+    
+  - name: "Search Engine Roundtable"
+    url: "https://www.seroundtable.com/feed"
+    priority: high
+    
+  - name: "Search Engine Journal"
+    url: "https://www.searchenginejournal.com/feed/"
+    priority: high
+    limit: 8  # Featured source — fetch more articles
+    
+  - name: "Search Engine Land"
+    url: "https://searchengineland.com/feed/"
+    priority: medium
+    
+  - name: "Moz Blog"
+    url: "https://moz.com/blog/rss"
+    priority: medium
+    
+  - name: "Ahrefs Blog"
+    url: "https://ahrefs.com/blog/feed/"
+    priority: medium
+    
+  - name: "SEMrush Blog"
+    url: "https://www.semrush.com/blog/feed/"
+    priority: medium
+    
+  - name: "Google Search Liaison"
+    url: "https://searchliaison.com/feed/"
+    priority: high
+
+  # ── Twitter/X Early Signals (Free via RSSHub) ──
+  # NOTE: Public RSSHub instances are often rate-limited by Twitter.
+  # For reliable Twitter feeds, self-host RSSHub or use nitter instances.
+  # These URLs work intermittently but catch breaking news when they do.
+  - name: "Twitter: Google Search Liaison"
+    url: "https://rsshub.app/twitter/user/searchliaison"
+    priority: high
+    type: social
+    
+  - name: "Twitter: John Mueller"
+    url: "https://rsshub.app/twitter/user/JohnMu"
+    priority: high
+    type: social
+    
+  - name: "Twitter: Barry Schwartz"
+    url: "https://rsshub.app/twitter/user/rustybrick"
+    priority: high
+    type: social
+    
+  - name: "Twitter: Danny Sullivan"
+    url: "https://rsshub.app/twitter/user/dannysullivan"
+    priority: medium
+    type: social
+
+  # ── Google Search Status (Free JSON API) ──
+  - name: "Google Search Status"
+    url: "https://status.search.google.com/incidents.json"
+    priority: high
+    type: status
+
+  # ── Reddit Community Pulse (Free native RSS) ──
+  - name: "Reddit: r/SEO"
+    url: "https://www.reddit.com/r/SEO/top/.rss?t=day"
+    priority: medium
+    type: social
+    
+  - name: "Reddit: r/bigseo"
+    url: "https://www.reddit.com/r/bigseo/top/.rss?t=day"
+    priority: medium
+    type: social
+    
+  - name: "Reddit: r/TechSEO"
+    url: "https://www.reddit.com/r/TechSEO/top/.rss?t=day"
+    priority: medium
+    type: social
+
+# Keywords to flag for relevance scoring
+# These are matched against article titles + summaries
+relevance_keywords:
+  - "algorithm update"
+  - "core update"
+  - "google update"
+  - "ranking factor"
+  - "indexing"
+  - "crawl"
+  - "sitemap"
+  - "structured data"
+  - "schema"
+  - "core web vitals"
+  - "page experience"
+  - "mobile-first"
+  - "nofollow"
+  - "canonical"
+  - "internal link"
+  - "anchor text"
+  - "content optimization"
+  - "E-E-A-T"
+  - "helpful content"
+  - "AI overview"
+  - "SGE"
+  - "search generative"
+  - "local SEO"
+  - "product page"
+  - "landing page"
+  - "cannibalization"
+  - "duplicate content"
+  - "hreflang"
+  - "international SEO"
+
+# Number of articles to fetch per source (max)
+# Sources can override this with a 'limit' field
+articles_per_source: 5
+
+# Report settings
+report:
+  output_dir: "reports"
+  max_headlines: 15
+  max_action_items: 8
+  max_learn_items: 5

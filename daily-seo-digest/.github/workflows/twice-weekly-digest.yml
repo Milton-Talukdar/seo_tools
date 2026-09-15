@@ -1,0 +1,42 @@
+name: SEO Digest — Twice Weekly
+
+on:
+  schedule:
+    # Run at 9:00 AM UTC on Tuesdays and Fridays
+    # 9 AM UTC = 2:30 PM IST
+    - cron: '0 9 * * 2,5'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate report
+        run: python run.py
+        env:
+          CLOUDFLARE_AI_TOKEN: ${{ secrets.CLOUDFLARE_AI_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Generate weekly summary
+        run: python generate_weekly.py
+
+      - name: Commit and push all reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Add ALL reports so the full archive is preserved
+          git add -f reports/*.md
+          git diff --staged --quiet || (git commit -m "SEO digest - $(date +%Y-%m-%d)" && git push)
