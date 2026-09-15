@@ -1,489 +1,480 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Traffic Drop Diagnostic — SEO Microtool</title>
-    <style>
-        :root {
-            --primary: #1a73e8;
-            --success: #137333;
-            --warning: #b06000;
-            --danger: #c5221f;
-            --bg: #f8f9fa;
-            --card: #ffffff;
-            --text: #202124;
-            --text-secondary: #5f6368;
-            --border: #dadce0;
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>Traffic Drop Diagnostic | Milton Talukdar SEO Microtools</title>
+  <meta name="description" content="Compare two Google Search Console CSV exports to classify traffic drops into algorithmic penalties, seasonality, or technical breakages.">
+  <link rel="canonical" href="https://milton-talukdar.github.io/tools/traffic-drop-diagnostic/">
+
+  <!-- Google Fonts & Material Symbols -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface-base": "#090D16",
+            "surface-elevated": "#0D1322",
+            "surface-container": "#1c1f29",
+            "surface-container-high": "#262a34",
+            "surface-container-highest": "#31353f",
+            "text-primary": "#F8FAFC",
+            "text-secondary": "#94A3B8",
+            "text-tertiary": "#64748B",
+            "primary-container": "#00f0ff",
+            "on-primary": "#00363a",
+            "secondary": "#4edea3",
+            "on-secondary": "#003824",
+            "border-glass": "rgba(255, 255, 255, 0.08)",
+            "border-glass-hover": "rgba(0, 240, 255, 0.28)"
+          },
+          fontFamily: {
+            "headline-xl": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-lg": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-sm": ["Plus Jakarta Sans", "sans-serif"],
+            "body-lg": ["Inter", "sans-serif"],
+            "body-md": ["Inter", "sans-serif"],
+            "label-code": ["JetBrains Mono", "monospace"],
+            "label-badge": ["JetBrains Mono", "monospace"],
+            "metric-display": ["JetBrains Mono", "monospace"]
+          }
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.6;
-            padding: 40px 20px;
-        }
-        .container {
-            max-width: 960px;
-            margin: 0 auto;
-        }
-        header {
-            text-align: center;
-            margin-bottom: 36px;
-        }
-        header h1 {
-            font-size: 30px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            margin-bottom: 6px;
-        }
-        header p {
-            color: var(--text-secondary);
-            font-size: 16px;
-        }
-        .card {
-            background: var(--card);
-            border-radius: 16px;
-            padding: 28px;
-            margin-bottom: 24px;
-            box-shadow: 0 1px 2px rgba(60,64,67,0.1), 0 2px 6px rgba(60,64,67,0.05);
-        }
-        label {
-            display: block;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            color: var(--text-secondary);
-            margin-bottom: 10px;
-        }
-        .file-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-        @media (max-width: 700px) {
-            .file-row { grid-template-columns: 1fr; }
-        }
-        .file-box {
-            border: 2px dashed var(--border);
-            border-radius: 12px;
-            padding: 24px;
-            text-align: center;
-            transition: all 0.2s;
-            cursor: pointer;
-        }
-        .file-box:hover, .file-box.dragover {
-            border-color: var(--primary);
-            background: #f4f8ff;
-        }
-        .file-box input {
-            display: none;
-        }
-        .file-box .icon {
-            font-size: 32px;
-            margin-bottom: 8px;
-        }
-        .file-box .filename {
-            font-size: 13px;
-            color: var(--text-secondary);
-            margin-top: 8px;
-            word-break: break-all;
-        }
-        .file-box .filename.loaded {
-            color: var(--success);
-            font-weight: 600;
-        }
-        .btn {
-            display: inline-block;
-            padding: 12px 28px;
-            border: none;
-            border-radius: 10px;
-            background: var(--primary);
-            color: white;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.15s;
-            margin-top: 8px;
-        }
-        .btn:hover { background: #1557b0; }
-        .btn:disabled {
-            background: #dadce0;
-            cursor: not-allowed;
-        }
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-        @media (max-width: 700px) {
-            .summary-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-        .summary-box {
-            background: var(--card);
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-            border: 1px solid var(--border);
-        }
-        .summary-value {
-            font-size: 26px;
-            font-weight: 700;
-            line-height: 1;
-            margin-bottom: 6px;
-        }
-        .summary-value.up { color: var(--success); }
-        .summary-value.down { color: var(--danger); }
-        .summary-label {
-            font-size: 11px;
-            color: var(--text-secondary);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .diagnosis {
-            padding: 16px 20px;
-            border-radius: 10px;
-            font-size: 15px;
-            font-weight: 600;
-            margin-bottom: 20px;
-        }
-        .diagnosis.algo { background: #fef7e0; color: #7a4b00; }
-        .diagnosis.tech { background: #fce8e6; color: #7f2a25; }
-        .diagnosis.brand { background: #e8f0fe; color: #154a93; }
-        .diagnosis.meta { background: #e6f4ea; color: #137333; }
-        .diagnosis.season { background: #f3e8fd; color: #5e1a7a; }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-        }
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid var(--border);
-        }
-        th {
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-secondary);
-            font-weight: 600;
-        }
-        td {
-            color: var(--text);
-        }
-        .change {
-            font-weight: 700;
-        }
-        .change.up { color: var(--success); }
-        .change.down { color: var(--danger); }
-        .section-title {
-            font-size: 16px;
-            font-weight: 700;
-            margin-bottom: 14px;
-            margin-top: 8px;
-        }
-        .hidden { display: none; }
-        .tips {
-            margin-top: 20px;
-            padding: 16px 18px;
-            background: #e8f0fe;
-            border-radius: 10px;
-            font-size: 13px;
-        }
-        .tips strong { color: var(--primary); }
-        .tips ul { margin: 8px 0 0 18px; }
-        .tips li { margin-bottom: 4px; color: var(--text-secondary); }
-        footer {
-            text-align: center;
-            margin-top: 40px;
-            font-size: 13px;
-            color: var(--text-secondary);
-        }
-    </style>
+      }
+    };
+  </script>
+
+  <style>
+    html { scroll-behavior: smooth; }
+    body { background-color: #090D16; color: #dfe2ef; }
+    ::selection { background: #00f0ff; color: #00363a; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #090D16; }
+    ::-webkit-scrollbar-thumb { background: #262a34; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #00f0ff; }
+    
+    .glass-card {
+      background: rgba(13, 19, 34, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      position: relative;
+    }
+    .glass-card-top-rim::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 10%;
+      right: 10%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.35), transparent);
+    }
+    
+    .file-box {
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 14px;
+      padding: 28px 20px;
+      text-align: center;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      background: rgba(28, 31, 41, 0.5);
+    }
+    .file-box:hover, .file-box.dragover {
+      border-color: #00f0ff;
+      background: rgba(0, 240, 255, 0.05);
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+    }
+    .file-box input { display: none; }
+    .filename.loaded { color: #4edea3; font-weight: 600; }
+
+    .summary-value.up { color: #4edea3; }
+    .summary-value.down { color: #f87171; }
+    .change.up { color: #4edea3; }
+    .change.down { color: #f87171; }
+
+    .diagnosis {
+      padding: 16px 20px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .diagnosis.algo { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border-color: rgba(245, 158, 11, 0.3); }
+    .diagnosis.tech { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
+    .diagnosis.brand { background: rgba(0, 240, 255, 0.15); color: #00f0ff; border-color: rgba(0, 240, 255, 0.3); }
+    .diagnosis.meta { background: rgba(78, 222, 163, 0.15); color: #4edea3; border-color: rgba(78, 222, 163, 0.3); }
+    .diagnosis.season { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
+  </style>
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>📉 Traffic Drop Diagnostic</h1>
-            <p>Compare two GSC CSV exports to spot what dropped and why.</p>
-        </header>
 
-        <div class="card">
-            <label>Upload GSC Performance Exports (CSV)</label>
-            <div class="file-row">
-                <div class="file-box" id="dropZone1">
-                    <input type="file" id="file1" accept=".csv">
-                    <div class="icon">📄</div>
-                    <div><strong>Period 1 (Before)</strong></div>
-                    <div class="filename" id="file1Name">Drop CSV here or click to browse</div>
-                </div>
-                <div class="file-box" id="dropZone2">
-                    <input type="file" id="file2" accept=".csv">
-                    <div class="icon">📄</div>
-                    <div><strong>Period 2 (After)</strong></div>
-                    <div class="filename" id="file2Name">Drop CSV here or click to browse</div>
-                </div>
-            </div>
-            <div style="text-align:center;margin-top:20px;">
-                <button class="btn" id="analyzeBtn" disabled>🔍 Analyze Drop</button>
-            </div>
+<body class="bg-surface-base font-body-md text-slate-200 antialiased selection:bg-primary-container selection:text-on-primary">
+
+  <!-- GLOBAL STICKY NAVBAR -->
+  <header class="fixed top-0 w-full z-50 bg-surface-base/85 backdrop-blur-xl border-b border-border-glass shadow-[0_1px_8px_rgba(0,0,0,0.3)]">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      
+      <!-- Brand Logo / ID & Breadcrumbs -->
+      <div class="flex items-center gap-3">
+        <a class="flex items-center gap-2 group" href="../../index.html">
+          <div class="px-2 py-1 rounded bg-surface-container-high border border-border-glass text-primary-container font-label-code text-xs font-semibold">MT</div>
+          <span class="font-headline-sm text-lg font-bold text-text-primary tracking-tight group-hover:text-primary-container transition-colors">Milton Talukdar</span>
+        </a>
+        <div class="hidden sm:flex items-center gap-2 pl-3 border-l border-border-glass text-xs font-label-code text-text-tertiary">
+          <span>/</span>
+          <a href="../../tools.html" class="hover:text-primary-container transition-colors">Tools</a>
+          <span>/</span>
+          <span class="text-text-secondary">Traffic Drop Diagnostic</span>
         </div>
+      </div>
 
-        <div id="results" class="hidden">
-            <div class="summary-grid">
-                <div class="summary-box">
-                    <div class="summary-value" id="totalClicksBefore">0</div>
-                    <div class="summary-label">Clicks Before</div>
-                </div>
-                <div class="summary-box">
-                    <div class="summary-value" id="totalClicksAfter">0</div>
-                    <div class="summary-label">Clicks After</div>
-                </div>
-                <div class="summary-box">
-                    <div class="summary-value down" id="clickChangePct">0%</div>
-                    <div class="summary-label">Change</div>
-                </div>
-                <div class="summary-box">
-                    <div class="summary-value" id="affectedCount">0</div>
-                    <div class="summary-label">Pages/Queries Affected</div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="diagnosis" id="diagnosisBox">
-                    Upload data to see diagnosis.
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="section-title">🔥 Top Losers by Clicks</div>
-                <div style="overflow-x:auto;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Page / Query</th>
-                                <th>Clicks Before</th>
-                                <th>Clicks After</th>
-                                <th>Change</th>
-                                <th>% Change</th>
-                            </tr>
-                        </thead>
-                        <tbody id="losersTable"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="section-title">📈 Biggest Position Drops</div>
-                <div style="overflow-x:auto;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Page / Query</th>
-                                <th>Pos Before</th>
-                                <th>Pos After</th>
-                                <th>Change</th>
-                            </tr>
-                        </thead>
-                        <tbody id="positionTable"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <div class="card tips">
-            <strong>💡 How to use this tool</strong>
-            <ul>
-                <li>Go to Google Search Console → Performance → Export (as CSV).</li>
-                <li>Export <strong>Period 1</strong> (e.g., 4 weeks before the drop).</li>
-                <li>Export <strong>Period 2</strong> (e.g., 4 weeks after the drop).</li>
-                <li>Use the same dimension (Pages or Queries) for both exports.</li>
-                <li>All processing is client-side — your data never leaves your browser.</li>
-            </ul>
-        </div>
-
-        <footer>
-            Built for the SEO community. All processing happens in your browser.
-        </footer>
+      <!-- Action Links -->
+      <div class="flex items-center gap-3">
+        <a class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-text-secondary hover:text-text-primary bg-surface-container hover:bg-surface-container-high border border-border-glass transition-all" href="../../tools.html">
+          <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+          <span>All Tools</span>
+        </a>
+        <a class="inline-flex items-center justify-center px-3.5 py-2 rounded-lg text-xs font-semibold text-text-primary bg-surface-container-high hover:bg-surface-container-highest border border-border-glass transition-all" href="https://github.com/Milton-Talukdar/seo_tools/tree/main/traffic-drop-diagnostic" target="_blank" rel="noopener noreferrer">
+          <span class="material-symbols-outlined text-[16px] mr-1 text-primary-container">terminal</span>
+          GitHub Code
+        </a>
+        <!-- User Avatar -->
+        <a href="../../index.html" class="block ml-1">
+          <img src="../../assets/milton-talukdar.png" alt="Milton Talukdar" class="w-8 h-8 rounded-full object-cover border border-primary-container/30 ring-1 ring-border-glass">
+        </a>
+      </div>
     </div>
+  </header>
 
-    <script>
-        const file1Input = document.getElementById('file1');
-        const file2Input = document.getElementById('file2');
-        const file1Name = document.getElementById('file1Name');
-        const file2Name = document.getElementById('file2Name');
-        const dropZone1 = document.getElementById('dropZone1');
-        const dropZone2 = document.getElementById('dropZone2');
-        const analyzeBtn = document.getElementById('analyzeBtn');
-        const results = document.getElementById('results');
+  <!-- MAIN CONTAINER -->
+  <main class="w-full pt-28 pb-16 bg-surface-base min-h-screen">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
 
-        let csv1 = null, csv2 = null;
+      <!-- Hero Title Header -->
+      <div class="space-y-3">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container border border-border-glass">
+          <span class="w-2 h-2 rounded-full bg-primary-container"></span>
+          <span class="font-label-badge text-xs text-primary-container font-semibold uppercase tracking-wider">Algorithmic Triage Engine</span>
+        </div>
+        <h1 class="font-headline-xl text-3xl sm:text-4xl font-extrabold text-text-primary tracking-tight">
+          Traffic Drop Diagnostic
+        </h1>
+        <p class="font-body-md text-sm sm:text-base text-text-secondary leading-relaxed max-w-2xl">
+          Upload and cross-analyze two Google Search Console Performance exports to classify traffic losses into broad algorithm updates, seasonality shifts, brand erosion, or technical indexation failures.
+        </p>
+      </div>
 
-        function setupDrop(zone, input, nameEl, num) {
-            zone.addEventListener('click', () => input.click());
-            zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
-            zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
-            zone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                zone.classList.remove('dragover');
-                const files = e.dataTransfer.files;
-                if (files.length) {
-                    input.files = files;
-                    handleFile(files[0], nameEl, num);
-                }
-            });
-            input.addEventListener('change', () => {
-                if (input.files.length) handleFile(input.files[0], nameEl, num);
-            });
+      <!-- File Upload Card -->
+      <div class="glass-card glass-card-top-rim p-6 sm:p-8 rounded-2xl border border-border-glass space-y-6">
+        <div>
+          <label class="block font-label-code text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-3">
+            Upload GSC Performance Exports (.csv)
+          </label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            
+            <!-- Zone 1 -->
+            <div class="file-box" id="dropZone1">
+              <input type="file" id="file1" accept=".csv">
+              <span class="material-symbols-outlined text-[36px] text-primary-container mb-2">history</span>
+              <div class="font-headline-sm text-sm font-bold text-text-primary">Period 1 (Baseline / Before)</div>
+              <div class="filename font-label-code text-xs text-text-tertiary mt-2" id="file1Name">Drop CSV here or click to browse</div>
+            </div>
+
+            <!-- Zone 2 -->
+            <div class="file-box" id="dropZone2">
+              <input type="file" id="file2" accept=".csv">
+              <span class="material-symbols-outlined text-[36px] text-secondary mb-2">update</span>
+              <div class="font-headline-sm text-sm font-bold text-text-primary">Period 2 (Comparison / After)</div>
+              <div class="filename font-label-code text-xs text-text-tertiary mt-2" id="file2Name">Drop CSV here or click to browse</div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="flex items-center justify-center pt-2">
+          <button class="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-bold bg-primary-container text-on-primary hover:shadow-[0_0_20px_rgba(0,240,255,0.4)] disabled:opacity-30 disabled:pointer-events-none transition-all font-headline-sm" id="analyzeBtn" disabled>
+            <span class="material-symbols-outlined text-[18px]">troubleshoot</span>
+            <span>Execute Diagnostic Analysis</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Results Container (Hidden until analysis runs) -->
+      <div id="results" class="hidden space-y-6">
+        
+        <!-- Summary Metric Cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="glass-card p-5 rounded-xl border border-border-glass text-center">
+            <div class="font-metric-display text-2xl sm:text-3xl font-bold text-text-primary" id="totalClicksBefore">0</div>
+            <div class="font-label-badge text-xs text-text-tertiary uppercase mt-1">Clicks Before</div>
+          </div>
+          <div class="glass-card p-5 rounded-xl border border-border-glass text-center">
+            <div class="font-metric-display text-2xl sm:text-3xl font-bold text-text-primary" id="totalClicksAfter">0</div>
+            <div class="font-label-badge text-xs text-text-tertiary uppercase mt-1">Clicks After</div>
+          </div>
+          <div class="glass-card p-5 rounded-xl border border-border-glass text-center">
+            <div class="font-metric-display text-2xl sm:text-3xl font-bold summary-value down" id="clickChangePct">0%</div>
+            <div class="font-label-badge text-xs text-text-tertiary uppercase mt-1">Net Change</div>
+          </div>
+          <div class="glass-card p-5 rounded-xl border border-border-glass text-center">
+            <div class="font-metric-display text-2xl sm:text-3xl font-bold text-secondary" id="affectedCount">0</div>
+            <div class="font-label-badge text-xs text-text-tertiary uppercase mt-1">Affected Entities</div>
+          </div>
+        </div>
+
+        <!-- Algorithmic Diagnosis Result Box -->
+        <div class="glass-card p-6 rounded-2xl border border-border-glass">
+          <div class="diagnosis" id="diagnosisBox">
+            Upload comparison datasets to render triage findings.
+          </div>
+        </div>
+
+        <!-- Top Losers Table -->
+        <div class="glass-card p-6 rounded-2xl border border-border-glass space-y-4">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-red-400 text-[20px]">trending_down</span>
+            <h3 class="font-headline-sm text-base font-bold text-text-primary">Top Losses by Absolute Clicks</h3>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="border-b border-border-glass text-xs font-label-code text-text-tertiary uppercase">
+                <tr>
+                  <th class="py-3 px-3">Page / Query Entity</th>
+                  <th class="py-3 px-3">Clicks Before</th>
+                  <th class="py-3 px-3">Clicks After</th>
+                  <th class="py-3 px-3">Delta</th>
+                  <th class="py-3 px-3">% Change</th>
+                </tr>
+              </thead>
+              <tbody id="losersTable" class="divide-y divide-border-glass font-label-code text-xs"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Position Drops Table -->
+        <div class="glass-card p-6 rounded-2xl border border-border-glass space-y-4">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-amber-400 text-[20px]">format_list_numbered</span>
+            <h3 class="font-headline-sm text-base font-bold text-text-primary">Largest Ranking Position Drops</h3>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="border-b border-border-glass text-xs font-label-code text-text-tertiary uppercase">
+                <tr>
+                  <th class="py-3 px-3">Page / Query Entity</th>
+                  <th class="py-3 px-3">Pos Before</th>
+                  <th class="py-3 px-3">Pos After</th>
+                  <th class="py-3 px-3">Position Shift</th>
+                </tr>
+              </thead>
+              <tbody id="positionTable" class="divide-y divide-border-glass font-label-code text-xs"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Instruction / Guidance Card -->
+      <div class="glass-card p-6 rounded-2xl border border-border-glass space-y-3">
+        <div class="flex items-center gap-2 text-primary-container">
+          <span class="material-symbols-outlined text-[20px]">info</span>
+          <h4 class="font-headline-sm text-sm font-bold text-text-primary">Triage Protocol &amp; Privacy Notice</h4>
+        </div>
+        <ul class="space-y-1.5 text-xs text-text-secondary leading-relaxed list-disc list-inside">
+          <li>Export two non-overlapping date ranges from <strong>Google Search Console → Performance → Export (CSV)</strong>.</li>
+          <li>Ensure both files use the same export tab dimension (either <code>Pages.csv</code> or <code>Queries.csv</code>).</li>
+          <li><strong>100% Client-Side Processing:</strong> Your CSV performance metrics are parsed entirely in your local browser sandbox and never transmitted to external servers.</li>
+        </ul>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="w-full bg-surface-elevated/90 backdrop-blur-xl border-t border-border-glass py-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-text-tertiary">
+      <div>© 2026 Milton Talukdar. Built for algorithmic longevity &amp; technical search leadership.</div>
+      <div class="flex items-center gap-4">
+        <a href="../../tools.html" class="hover:text-primary-container transition-colors">Tools Directory</a>
+        <a href="../../index.html" class="hover:text-text-primary transition-colors">Portfolio Overview</a>
+        <a href="https://github.com/Milton-Talukdar/seo_tools" target="_blank" rel="noopener noreferrer" class="hover:text-primary-container transition-colors">GitHub Repository</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- TOOL LOGIC JAVASCRIPT -->
+  <script>
+    const file1Input = document.getElementById('file1');
+    const file2Input = document.getElementById('file2');
+    const file1Name = document.getElementById('file1Name');
+    const file2Name = document.getElementById('file2Name');
+    const dropZone1 = document.getElementById('dropZone1');
+    const dropZone2 = document.getElementById('dropZone2');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const results = document.getElementById('results');
+
+    let csv1 = null, csv2 = null;
+
+    function setupDrop(zone, input, nameEl, num) {
+      zone.addEventListener('click', () => input.click());
+      zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files.length) {
+          input.files = files;
+          handleFile(files[0], nameEl, num);
         }
+      });
+      input.addEventListener('change', () => {
+        if (input.files.length) handleFile(input.files[0], nameEl, num);
+      });
+    }
 
-        function handleFile(file, nameEl, num) {
-            nameEl.textContent = file.name;
-            nameEl.classList.add('loaded');
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                if (num === 1) csv1 = e.target.result;
-                else csv2 = e.target.result;
-                analyzeBtn.disabled = !(csv1 && csv2);
-            };
-            reader.readAsText(file);
-        }
+    function handleFile(file, nameEl, num) {
+      nameEl.textContent = file.name;
+      nameEl.classList.add('loaded');
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (num === 1) csv1 = e.target.result;
+        else csv2 = e.target.result;
+        analyzeBtn.disabled = !(csv1 && csv2);
+      };
+      reader.readAsText(file);
+    }
 
-        setupDrop(dropZone1, file1Input, file1Name, 1);
-        setupDrop(dropZone2, file2Input, file2Name, 2);
+    setupDrop(dropZone1, file1Input, file1Name, 1);
+    setupDrop(dropZone2, file2Input, file2Name, 2);
 
-        function parseCSV(text) {
-            const lines = text.trim().split(/\r?\n/);
-            if (lines.length < 2) return [];
-            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
-            const out = [];
-            for (let i = 1; i < lines.length; i++) {
-                const row = {};
-                // Simple CSV parse (doesn't handle commas inside quotes perfectly, but works for standard GSC exports)
-                const vals = lines[i].split(',');
-                headers.forEach((h, idx) => {
-                    let v = vals[idx] ? vals[idx].trim().replace(/^"|"$/g, '') : '';
-                    if (['clicks', 'impressions', 'ctr', 'position'].includes(h)) {
-                        v = parseFloat(v) || 0;
-                    }
-                    row[h] = v;
-                });
-                // Determine key: page/url or query
-                row._key = row['page'] || row['url'] || row['query'] || row['top queries'] || 'Unknown';
-                out.push(row);
-            }
-            return out;
-        }
-
-        function formatNum(n) {
-            return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
-        }
-
-        analyzeBtn.addEventListener('click', () => {
-            if (!csv1 || !csv2) return;
-
-            const data1 = parseCSV(csv1);
-            const data2 = parseCSV(csv2);
-
-            const map1 = new Map(data1.map(r => [r._key, r]));
-            const map2 = new Map(data2.map(r => [r._key, r]));
-
-            const allKeys = new Set([...map1.keys(), ...map2.keys()]);
-            const comparisons = [];
-
-            let clicksBefore = 0, clicksAfter = 0;
-
-            allKeys.forEach(key => {
-                const r1 = map1.get(key) || { clicks: 0, impressions: 0, position: 0 };
-                const r2 = map2.get(key) || { clicks: 0, impressions: 0, position: 0 };
-                clicksBefore += r1.clicks;
-                clicksAfter += r2.clicks;
-
-                comparisons.push({
-                    key,
-                    clicksBefore: r1.clicks,
-                    clicksAfter: r2.clicks,
-                    clickDiff: r2.clicks - r1.clicks,
-                    clickPct: r1.clicks > 0 ? ((r2.clicks - r1.clicks) / r1.clicks) * 100 : (r2.clicks > 0 ? 100 : 0),
-                    posBefore: r1.position || 0,
-                    posAfter: r2.position || 0,
-                    posDiff: (r2.position || 0) - (r1.position || 0)
-                });
-            });
-
-            const clickChange = clicksBefore > 0 ? ((clicksAfter - clicksBefore) / clicksBefore) * 100 : 0;
-            const affected = comparisons.filter(c => c.clickDiff < 0).length;
-
-            // Update summary
-            document.getElementById('totalClicksBefore').textContent = formatNum(clicksBefore);
-            document.getElementById('totalClicksAfter').textContent = formatNum(clicksAfter);
-            const changeEl = document.getElementById('clickChangePct');
-            changeEl.textContent = (clickChange > 0 ? '+' : '') + formatNum(clickChange) + '%';
-            changeEl.className = 'summary-value ' + (clickChange >= 0 ? 'up' : 'down');
-            document.getElementById('affectedCount').textContent = affected;
-
-            // Diagnosis
-            const diag = document.getElementById('diagnosisBox');
-            const broadDrop = affected / Math.max(comparisons.length, 1) > 0.5;
-            const avgPosChange = comparisons.reduce((s, c) => s + c.posDiff, 0) / Math.max(comparisons.length, 1);
-            const topLosers = comparisons.filter(c => c.clickDiff < 0).sort((a, b) => a.clickDiff - b.clickDiff).slice(0, 10);
-            const brandedDropped = topLosers.some(c => c.key.toLowerCase().includes('brand') || c.key.split(' ').length < 3);
-
-            if (broadDrop && avgPosChange > 2) {
-                diag.className = 'diagnosis algo';
-                diag.textContent = '🔍 Diagnosis: Broad algorithm update or SERP feature change suspected. Many pages/queries dropped in position simultaneously.';
-            } else if (broadDrop && avgPosChange <= 2) {
-                diag.className = 'diagnosis season';
-                diag.textContent = '📅 Diagnosis: Seasonality or demand shift. Traffic dropped broadly but positions remained stable.';
-            } else if (!broadDrop && topLosers.length > 0) {
-                diag.className = 'diagnosis tech';
-                diag.textContent = '🔧 Diagnosis: Page-specific issue. A few pages/queries lost traffic — check for technical problems, content changes, or manual actions on those URLs.';
-            } else if (brandedDropped) {
-                diag.className = 'diagnosis brand';
-                diag.textContent = '🏷️ Diagnosis: Brand traffic dropped. Check brand campaigns, PR issues, or direct traffic trends.';
-            } else if (clickChange > -10) {
-                diag.className = 'diagnosis meta';
-                diag.textContent = '✅ Diagnosis: Minor fluctuation. The drop is within normal variance or CTR shifted due to SERP feature changes.';
-            } else {
-                diag.className = 'diagnosis tech';
-                diag.textContent = '⚠️ Diagnosis: Significant drop. Review recent site changes, technical issues, and backlink losses.';
-            }
-
-            // Top losers table
-            const losersBody = document.getElementById('losersTable');
-            losersBody.innerHTML = topLosers.map(c => {
-                const pct = c.clickPct === Infinity ? 'New' : (c.clickPct > 0 ? '+' : '') + formatNum(c.clickPct) + '%';
-                return `<tr>
-                    <td>${c.key}</td>
-                    <td>${formatNum(c.clicksBefore)}</td>
-                    <td>${formatNum(c.clicksAfter)}</td>
-                    <td class="change ${c.clickDiff >= 0 ? 'up' : 'down'}">${c.clickDiff >= 0 ? '+' : ''}${formatNum(c.clickDiff)}</td>
-                    <td class="change ${c.clickPct >= 0 ? 'up' : 'down'}">${pct}</td>
-                </tr>`;
-            }).join('');
-
-            // Position drops table
-            const posDrops = comparisons.filter(c => c.posDiff > 0).sort((a, b) => b.posDiff - a.posDiff).slice(0, 10);
-            const posBody = document.getElementById('positionTable');
-            posBody.innerHTML = posDrops.map(c => `<tr>
-                <td>${c.key}</td>
-                <td>${c.posBefore > 0 ? formatNum(c.posBefore) : '—'}</td>
-                <td>${c.posAfter > 0 ? formatNum(c.posAfter) : '—'}</td>
-                <td class="change down">+${formatNum(c.posDiff)}</td>
-            </tr>`).join('');
-
-            if (posDrops.length === 0) {
-                posBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#666;">No significant position drops detected.</td></tr>';
-            }
-
-            results.classList.remove('hidden');
-            results.scrollIntoView({ behavior: 'smooth' });
+    function parseCSV(text) {
+      const lines = text.trim().split(/\r?\n/);
+      if (lines.length < 2) return [];
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+      const out = [];
+      for (let i = 1; i < lines.length; i++) {
+        const row = {};
+        const vals = lines[i].split(',');
+        headers.forEach((h, idx) => {
+          let v = vals[idx] ? vals[idx].trim().replace(/^"|"$/g, '') : '';
+          if (['clicks', 'impressions', 'ctr', 'position'].includes(h)) {
+            v = parseFloat(v) || 0;
+          }
+          row[h] = v;
         });
-    </script>
+        row._key = row['page'] || row['url'] || row['query'] || row['top queries'] || 'Unknown';
+        out.push(row);
+      }
+      return out;
+    }
+
+    function formatNum(n) {
+      return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+    }
+
+    analyzeBtn.addEventListener('click', () => {
+      if (!csv1 || !csv2) return;
+
+      const data1 = parseCSV(csv1);
+      const data2 = parseCSV(csv2);
+
+      const map1 = new Map(data1.map(r => [r._key, r]));
+      const map2 = new Map(data2.map(r => [r._key, r]));
+
+      const allKeys = new Set([...map1.keys(), ...map2.keys()]);
+      const comparisons = [];
+
+      let clicksBefore = 0, clicksAfter = 0;
+
+      allKeys.forEach(key => {
+        const r1 = map1.get(key) || { clicks: 0, impressions: 0, position: 0 };
+        const r2 = map2.get(key) || { clicks: 0, impressions: 0, position: 0 };
+        clicksBefore += r1.clicks;
+        clicksAfter += r2.clicks;
+
+        comparisons.push({
+          key,
+          clicksBefore: r1.clicks,
+          clicksAfter: r2.clicks,
+          clickDiff: r2.clicks - r1.clicks,
+          clickPct: r1.clicks > 0 ? ((r2.clicks - r1.clicks) / r1.clicks) * 100 : (r2.clicks > 0 ? 100 : 0),
+          posBefore: r1.position || 0,
+          posAfter: r2.position || 0,
+          posDiff: (r2.position || 0) - (r1.position || 0)
+        });
+      });
+
+      const clickChange = clicksBefore > 0 ? ((clicksAfter - clicksBefore) / clicksBefore) * 100 : 0;
+      const affected = comparisons.filter(c => c.clickDiff < 0).length;
+
+      document.getElementById('totalClicksBefore').textContent = formatNum(clicksBefore);
+      document.getElementById('totalClicksAfter').textContent = formatNum(clicksAfter);
+      const changeEl = document.getElementById('clickChangePct');
+      changeEl.textContent = (clickChange > 0 ? '+' : '') + formatNum(clickChange) + '%';
+      changeEl.className = 'font-metric-display text-2xl sm:text-3xl font-bold summary-value ' + (clickChange >= 0 ? 'up' : 'down');
+      document.getElementById('affectedCount').textContent = affected;
+
+      const diag = document.getElementById('diagnosisBox');
+      const broadDrop = affected / Math.max(comparisons.length, 1) > 0.5;
+      const avgPosChange = comparisons.reduce((s, c) => s + c.posDiff, 0) / Math.max(comparisons.length, 1);
+      const topLosers = comparisons.filter(c => c.clickDiff < 0).sort((a, b) => a.clickDiff - b.clickDiff).slice(0, 10);
+      const brandedDropped = topLosers.some(c => c.key.toLowerCase().includes('brand') || c.key.split(' ').length < 3);
+
+      if (broadDrop && avgPosChange > 2) {
+        diag.className = 'diagnosis algo';
+        diag.textContent = '🔍 Diagnosis: Broad algorithmic shift or SERP feature update suspected. Widespread simultaneous rank drops across query categories.';
+      } else if (broadDrop && avgPosChange <= 2) {
+        diag.className = 'diagnosis season';
+        diag.textContent = '📅 Diagnosis: Market seasonality or search volume contraction. Traffic declined broadly while average rank positions held stable.';
+      } else if (!broadDrop && topLosers.length > 0) {
+        diag.className = 'diagnosis tech';
+        diag.textContent = '🔧 Diagnosis: Targeted page or cluster degradation. Isolated traffic losses indicate URL canonical changes, rendering breaks, or competitor displacements.';
+      } else if (brandedDropped) {
+        diag.className = 'diagnosis brand';
+        diag.textContent = '🏷️ Diagnosis: Navigational & brand query contraction. Check PR announcements, brand media campaigns, or direct traffic trendlines.';
+      } else if (clickChange > -10) {
+        diag.className = 'diagnosis meta';
+        diag.textContent = '✅ Diagnosis: Expected statistical variance. Performance metrics remain within baseline standard deviations.';
+      } else {
+        diag.className = 'diagnosis tech';
+        diag.textContent = '⚠️ Diagnosis: Structural decline detected. Audit recent codebase deployments, robots.txt exclusions, and lost referring domain velocity.';
+      }
+
+      const losersBody = document.getElementById('losersTable');
+      losersBody.innerHTML = topLosers.map(c => {
+        const pct = c.clickPct === Infinity ? 'New' : (c.clickPct > 0 ? '+' : '') + formatNum(c.clickPct) + '%';
+        return `<tr class="hover:bg-surface-container/50 transition-colors">
+          <td class="py-3 px-3 text-text-primary max-w-xs sm:max-w-md truncate" title="${c.key}">${c.key}</td>
+          <td class="py-3 px-3 text-text-secondary">${formatNum(c.clicksBefore)}</td>
+          <td class="py-3 px-3 text-text-secondary">${formatNum(c.clicksAfter)}</td>
+          <td class="py-3 px-3 change ${c.clickDiff >= 0 ? 'up' : 'down'} font-semibold">${c.clickDiff >= 0 ? '+' : ''}${formatNum(c.clickDiff)}</td>
+          <td class="py-3 px-3 change ${c.clickPct >= 0 ? 'up' : 'down'} font-semibold">${pct}</td>
+        </tr>`;
+      }).join('');
+
+      const posDrops = comparisons.filter(c => c.posDiff > 0).sort((a, b) => b.posDiff - a.posDiff).slice(0, 10);
+      const posBody = document.getElementById('positionTable');
+      posBody.innerHTML = posDrops.map(c => `<tr class="hover:bg-surface-container/50 transition-colors">
+        <td class="py-3 px-3 text-text-primary max-w-xs sm:max-w-md truncate" title="${c.key}">${c.key}</td>
+        <td class="py-3 px-3 text-text-secondary">${c.posBefore > 0 ? formatNum(c.posBefore) : '—'}</td>
+        <td class="py-3 px-3 text-text-secondary">${c.posAfter > 0 ? formatNum(c.posAfter) : '—'}</td>
+        <td class="py-3 px-3 change down font-semibold">+${formatNum(c.posDiff)}</td>
+      </tr>`).join('');
+
+      if (posDrops.length === 0) {
+        posBody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-text-tertiary">No significant position drops detected across comparison sets.</td></tr>';
+      }
+
+      results.classList.remove('hidden');
+      results.scrollIntoView({ behavior: 'smooth' });
+    });
+  </script>
+
 </body>
 </html>
